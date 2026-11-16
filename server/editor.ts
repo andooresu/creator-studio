@@ -12,6 +12,25 @@ import type { Word, TakeSegment, EditPlan } from "../shared/types.ts";
 import type { Concept } from "../shared/schemas.ts";
 
 /** Rango [inicio, fin] en segundos. */
+/** Argumentos para pasar un filtro complejo a ffmpeg en cualquier versión. ffmpeg 8 eliminó -filter_complex_script;
+ *  el filtro va en línea (execFile no pasa por una shell y macOS admite ~1 MB de argumentos). Solo si es enorme
+ *  se lee del archivo: con «-/filter_complex» en ffmpeg 7.1+ o con la opción antigua en versiones anteriores. */
+function filterComplexArgs(filter: string, file: string): string[] {
+  if (filter.length < 200_000) return ["-filter_complex", filter];
+  return ffmpegAtLeast(7, 1) ? ["-/filter_complex", file] : ["-filter_complex_script", file];
+}
+
+let ffmpegVer: [number, number] | null = null;
+function ffmpegAtLeast(major: number, minor: number): boolean {
+  if (!ffmpegVer) {
+    try {
+      const m = /ffmpeg version n?(\d+)\.(\d+)/.exec(execFileSync("ffmpeg", ["-version"], { stdio: "pipe" }).toString());
+      ffmpegVer = m ? [Number(m[1]), Number(m[2])] : [99, 0]; // compilación de desarrollo ("N-…"): la más nueva
+    } catch { ffmpegVer = [0, 0]; }
+  }
+  return ffmpegVer[0] > major || (ffmpegVer[0] === major && ffmpegVer[1] >= minor);
+}
+
 export type Range = [number, number];
 /** Envolvente de energía: un valor dB RMS cada `step` segundos. */
 export interface Envelope { step: number; v: number[] }
@@ -333,7 +352,7 @@ export async function autoEdit({ input, dir, concept, plan, words, brollDir = ""
   fs.writeFileSync(filterFile, filter);
   const cut = path.join(out, "cut.mp4");
   const enc = await videoEncoder();
-  const common = ["-filter_complex_script", filterFile, "-map", "[vout]", "-map", "[aout]", "-pix_fmt", "yuv420p",
+  const common = [...filterComplexArgs(filter, filterFile), "-map", "[vout]", "-map", "[aout]", "-pix_fmt", "yuv420p",
     "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", cut];
   try {
     // En Mac: decodificación y codificación por hardware (VideoToolbox).
