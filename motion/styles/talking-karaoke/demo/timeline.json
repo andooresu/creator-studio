@@ -1,0 +1,173 @@
+{
+  "note": "Demo del estilo Talking karaoke: 13,2 s a 100 BPM (22 beats), todo en beats. La persona es un marcador dibujado y la voz una VO de ejemplo escrita en demo/index.html (window.VO): al poner tu clip y tu voz real (vo.py + words.py) esa VO de ejemplo se ignora sola. Copia este archivo a la raíz del proyecto y corre node scripts/sync.mjs.",
+  "title": "Demo — Talking karaoke",
+  "duration": 13.2,
+  "fps": 60,
+  "bpm": 100,
+  "formats": [
+    "9x16",
+    "16x9"
+  ],
+  "music": {
+    "source": "synth",
+    "chords": [
+      "Am",
+      "F",
+      "C",
+      "G"
+    ],
+    "sections": [
+      {
+        "at": "hook",
+        "kind": "intro"
+      },
+      {
+        "at": "t1",
+        "kind": "full"
+      },
+      {
+        "at": "t3",
+        "kind": "build"
+      },
+      {
+        "at": 16.5,
+        "kind": "gap"
+      },
+      {
+        "at": "cta",
+        "kind": "drop"
+      }
+    ],
+    "accents": [
+      "t3_full",
+      "cta_pill"
+    ]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0,
+    "hook_w2": 0.75,
+    "hook_w3": 1.5,
+    "hook_out": 3.4,
+    "t1": 4,
+    "t1_chip": 4.25,
+    "t1_card": 6,
+    "t1_out": 8.6,
+    "t2": 9,
+    "t2_chip": 9.25,
+    "t2_punch": 11.75,
+    "t2_back": 12.75,
+    "t3": 13,
+    "t3_chip": 13.25,
+    "t3_full": 13.5,
+    "t3_full_out": 15.25,
+    "t3_hard": 16,
+    "t3_hard_out": 16.9,
+    "cta": 17,
+    "cta_hard": 18.25,
+    "cta_pill": 19,
+    "pulse": 21,
+    "done": 22
+  },
+  "sfx": [
+    {
+      "at": "hook",
+      "type": "pop",
+      "gain": 0.7,
+      "what": "palabra 1 del gancho (visible en el frame 0)"
+    },
+    {
+      "at": "hook_w2",
+      "type": "pop",
+      "gain": 0.5,
+      "what": "palabra 2 del gancho"
+    },
+    {
+      "at": "hook_w3",
+      "type": "pop",
+      "gain": 0.55,
+      "what": "palabra 3 del gancho (acento)"
+    },
+    {
+      "at": "t1_chip",
+      "type": "pop",
+      "gain": 0.45,
+      "what": "etiqueta TRUCO 1"
+    },
+    {
+      "at": "t1_card",
+      "type": "whoosh",
+      "gain": 0.5,
+      "what": "tarjeta de b-roll entra sobre la persona"
+    },
+    {
+      "at": "t2_chip",
+      "type": "pop",
+      "gain": 0.45,
+      "what": "etiqueta TRUCO 2"
+    },
+    {
+      "at": "t2_punch",
+      "type": "pop",
+      "gain": 0.4,
+      "what": "punch-in en «ojos»"
+    },
+    {
+      "at": "t3_chip",
+      "type": "pop",
+      "gain": 0.45,
+      "what": "etiqueta TRUCO 3"
+    },
+    {
+      "at": "t3_full",
+      "type": "whoosh",
+      "gain": 0.65,
+      "what": "b-roll a pantalla completa sube cubriendo"
+    },
+    {
+      "at": "t3_hard",
+      "type": "thump",
+      "gain": 0.8,
+      "what": "punch duro en «amigo»"
+    },
+    {
+      "at": "cta_hard",
+      "type": "thump",
+      "gain": 0.85,
+      "what": "punch duro en «síguenos»"
+    },
+    {
+      "at": "cta_pill",
+      "type": "pop",
+      "gain": 0.6,
+      "what": "píldora CTA"
+    },
+    {
+      "at": "pulse",
+      "type": "pop",
+      "gain": 0.35,
+      "what": "pulso de la píldora"
+    }
+  ],
+  "captions": {
+    "formats": [
+      "9x16",
+      "16x9"
+    ],
+    "preset": "karaoke-amarillo",
+    "keywords": [
+      "luz",
+      "ojos",
+      "amigo",
+      "síguenos"
+    ],
+    "skip": [
+      "Tres trucos para grabar mejor con tu celular."
+    ],
+    "size": 68
+  },
+  "lint": {
+    "minText": {},
+    "ignore": []
+  }
+}

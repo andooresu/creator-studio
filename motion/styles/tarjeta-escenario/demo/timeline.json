@@ -1,0 +1,170 @@
+{
+  "note": "Demo del estilo Tarjeta escenario (guía de cuidado posterior a un servicio). Todo en BEATS (100 BPM nominal hasta que exista beats.json). Copia este archivo a la raíz del proyecto y ejecuta node scripts/sync.mjs.",
+  "title": "Tarjeta escenario — demo",
+  "duration": 13.2,
+  "fps": 60,
+  "bpm": 100,
+  "formats": [
+    "9x16",
+    "4x5"
+  ],
+  "music": {
+    "source": "synth",
+    "chords": [
+      "Fmaj7",
+      "Am7",
+      "Dm7",
+      "Bbmaj7"
+    ],
+    "sections": [
+      {
+        "at": "hook",
+        "kind": "intro"
+      },
+      {
+        "at": "pasos",
+        "kind": "full"
+      },
+      {
+        "at": "ciclo",
+        "kind": "build"
+      },
+      {
+        "at": "end",
+        "kind": "drop"
+      }
+    ]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0,
+    "hook_w2": 1,
+    "pasos": 4,
+    "paso2": 5.5,
+    "paso3": 7,
+    "giro": 8.5,
+    "giro_q": 8.75,
+    "giro_a": 11,
+    "giro_zoom": 11.5,
+    "giro_tag": 11.75,
+    "ciclo": 13.5,
+    "ciclo_pop": 16,
+    "end": 17.5,
+    "btn": 19,
+    "loop": 21.25,
+    "done": 22
+  },
+  "sfx": [
+    {
+      "at": "hook_w2",
+      "type": "pop",
+      "gain": 0.5,
+      "what": "palabra acento del hook"
+    },
+    {
+      "at": 2.5,
+      "type": "tick",
+      "gain": 0.3,
+      "what": "etiqueta día 1"
+    },
+    {
+      "at": "pasos",
+      "type": "whoosh",
+      "gain": 0.45,
+      "what": "slide de carrusel a los gestos"
+    },
+    {
+      "at": "pasos",
+      "type": "click",
+      "gain": 0.5,
+      "what": "gesto 1"
+    },
+    {
+      "at": "paso2",
+      "type": "click",
+      "gain": 0.5,
+      "what": "gesto 2"
+    },
+    {
+      "at": "paso3",
+      "type": "click",
+      "gain": 0.5,
+      "what": "gesto 3"
+    },
+    {
+      "at": "giro",
+      "type": "whoosh",
+      "gain": 0.45,
+      "what": "slide de carrusel a la ruptura"
+    },
+    {
+      "at": "giro",
+      "type": "tick",
+      "gain": 0.3,
+      "what": "punto de carrusel"
+    },
+    {
+      "at": "giro_a",
+      "type": "pop",
+      "gain": 0.4,
+      "what": "renacen los trazos en acento"
+    },
+    {
+      "at": "giro_tag",
+      "type": "pop",
+      "gain": 0.45,
+      "what": "etiqueta que sigue"
+    },
+    {
+      "at": "ciclo",
+      "type": "whoosh",
+      "gain": 0.45,
+      "what": "slide de carrusel"
+    },
+    {
+      "at": 14.5,
+      "type": "tick",
+      "gain": 0.3,
+      "what": "parada media del riel"
+    },
+    {
+      "at": "ciclo_pop",
+      "type": "thump",
+      "gain": 0.8,
+      "what": "la última parada aterriza en acento"
+    },
+    {
+      "at": "end",
+      "type": "thump",
+      "gain": 0.7,
+      "what": "corte al cierre"
+    },
+    {
+      "at": "btn",
+      "type": "pop",
+      "gain": 0.6,
+      "what": "píldora CTA"
+    },
+    {
+      "at": 20,
+      "type": "tick",
+      "gain": 0.3,
+      "what": "brillo cruza la píldora (en tu proyecto: campanita suave)"
+    }
+  ],
+  "mix": {
+    "music": -1,
+    "sfx": -6,
+    "vo": 0,
+    "duck": true
+  },
+  "captions": {
+    "formats": [],
+    "preset": "pill-sobrio",
+    "skip": []
+  },
+  "lint": {
+    "minText": {},
+    "ignore": []
+  }
+}

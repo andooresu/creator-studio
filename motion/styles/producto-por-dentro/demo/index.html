@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Producto por dentro · demo</title>
+<style>
+  /* Plantilla del estilo "Producto por dentro". Copia este archivo a film/index.html, las fuentes de ../fonts/ a
+     assets/fonts/ y helpers/producto.js a film/producto.js. Para tu marca cambia solo las fuentes y los tokens de :root. */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/Manrope-var.woff2) format('woff2'); font-weight: 200 800; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Inter-var.woff2) format('woff2'); font-weight: 100 900; }
+  :root {
+    /* fondo · tinta · tinta secundaria · acento único · titulares · tintes del halo · sombra */
+    --bg: #fcfcfa; --ink: #16181d; --ink-2: #5f6470; --accent: #0e9f6e; --head: #0b3d33;
+    --tint: #e8f6f0; --tint-2: #cfeee1; --card: #ffffff; --shadow: rgba(11, 61, 51, .30);
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; letter-spacing: -0.035em;
+             line-height: 0.95; white-space: nowrap; }
+  /* un renglón es una máscara; el padding de 0.2em protege tildes y descendentes */
+  .line { position: absolute; overflow: hidden; padding: 0.2em 0.04em 0.2em; margin: -0.2em -0.04em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .card { position: absolute; background: var(--card); border-radius: 28px;
+          box-shadow: 0 2px 6px rgba(0,0,0,.05), 0 30px 80px -20px rgba(0,0,0,.22); }
+  .ui { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; background: var(--card);
+        box-shadow: 0 2px 6px rgba(11,61,51,.06), 0 40px 90px -24px var(--shadow); }
+  .ui img, .ui canvas { position: absolute; left: 0; top: 0; display: block; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="producto.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

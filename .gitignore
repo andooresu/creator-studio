@@ -1,0 +1,22 @@
+# Datos de cada usuario: proyectos, API keys, guías, uso. NUNCA se suben.
+data/
+
+node_modules/
+.DS_Store
+*.log
+
+# Interfaz compilada (se genera con npm run build)
+web/dist/
+
+# Entorno Python del motor de video (se crea con motion/scripts/pyenv.sh)
+motion/.venv/
+
+# Motores de audio locales (se instalan por máquina en ~/.cache/creator-studio)
+motion/.venv-audio/
+
+# Caché de Python de los scripts de audio local
+motion/audio-local/__pycache__/
+__pycache__/
+
+# documentos internos de diseño (no se publican)
+docs/propuesta-*.html

@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clase en hojas — demo</title>
+<style>
+  /* Estilo «Clase en hojas». Copia este archivo como film/index.html y las fuentes a assets/fonts/.
+     Para tu marca cambia SOLO las @font-face y los tokens de :root; el resto del CSS es la gramática del estilo. */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/Manrope-var.woff2) format('woff2'); font-weight: 200 800; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Inter-var.woff2) format('woff2'); font-weight: 100 900; }
+  :root {
+    /* papel cálido, tinta verde muy oscura, UN acento (verde azulado). Tintes para profundidad; rojo y ámbar solo en iconos */
+    --bg: #fbfaf6; --ink: #1f2a24; --ink-2: #55605a; --ink-3: #7d8781; --accent: #0f7c74;
+    --tint-50: #f3f8f6; --tint-100: #e3f1ee; --tint-200: #c6e3dc; --card: #fffdf9; --on-accent: #fffdf9;
+    --bad: #c8402f; --warn: #b7791f;
+    --shadow: 0 1px 2px rgba(31,42,36,.06), 0 30px 70px -24px rgba(15,124,116,.28);
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  /* el halo vive en el escenario fijo: las hojas empujadas nunca arrastran un borde de fondo */
+  #stage { position: relative; overflow: hidden; transform-origin: 0 0;
+           background: radial-gradient(1200px 800px at 82% 14%, var(--tint-100) 0%, rgba(227,241,238,0) 70%), var(--bg);
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; transform-origin: 50% 50%; background: none; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { position: absolute; font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; letter-spacing: -0.035em;
+             line-height: 1.02; white-space: nowrap; color: var(--ink); }
+  .line { position: absolute; overflow: hidden; padding: 0.24em 0.04em 0.2em; margin: -0.24em -0.04em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .eyebrow { position: absolute; display: flex; align-items: center; font: 700 30px/1 'UI'; color: var(--accent); letter-spacing: 0.01em;
+             white-space: nowrap; transform-origin: 0 50%; }
+  .eyebrow b { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; height: 40px; margin-right: 16px;
+               border-radius: 20px; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 28px; padding: 0 12px; box-sizing: border-box; }
+  .eyebrow.big { font-size: 52px; }
+  .eyebrow.big b { font-size: 44px; height: 70px; min-width: 104px; border-radius: 35px; }
+  .card { position: absolute; background: var(--card); border-radius: 28px; box-shadow: var(--shadow); }
+  .card.top { border-top: 4px solid var(--accent); }
+  .chip { position: absolute; display: inline-flex; align-items: center; gap: 14px; white-space: nowrap;
+          font: 600 34px/1 'UI'; color: var(--ink); background: var(--tint-100); border: 1.5px solid var(--tint-200);
+          padding: 18px 28px; border-radius: 999px; transform-origin: 0 50%; }
+  .chip.solid { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .chip .ic { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+              font: 800 28px/1 'UI'; color: var(--accent); background: var(--on-accent); flex: none; }
+  .photo { position: absolute; overflow: hidden; border-radius: 32px; transform-origin: 50% 50%; box-shadow: var(--shadow); }
+  .photo img { position: absolute; left: 0; top: 0; transform-origin: 50% 50%; }
+  /* marcador de metraje: se reemplaza por una foto real o una secuencia (C.drawSeq) */
+  .slot { background: repeating-linear-gradient(135deg, var(--tint-100) 0 26px, var(--tint-50) 26px 52px); border: 3px dashed var(--tint-200); box-sizing: border-box; }
+  .slot-in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+  .slot-l { font: 800 44px/1 'Display'; letter-spacing: 0.02em; color: var(--ink); }
+  .slot-n { font: 600 30px/1.2 'UI'; color: var(--ink-2); }
+  .logo-slot { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 28px;
+               border: 3px dashed var(--tint-200); background: var(--tint-50); box-sizing: border-box;
+               font: 800 64px/1 'Display'; letter-spacing: 0.04em; color: var(--ink-3); transform-origin: 0 50%; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="hojas.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

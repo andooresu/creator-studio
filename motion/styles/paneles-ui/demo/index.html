@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>motion reel</title>
+<style>
+  /* Estilo "Paneles con UI": UNA familia (Manrope variable) para todo; la jerarquía sale del peso y del tamaño.
+     Copia fonts/ del estilo a assets/fonts/ (o pon la de tu marca). */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/Manrope-var.woff2) format('woff2'); font-weight: 200 800; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Manrope-var.woff2) format('woff2'); font-weight: 200 800; }
+  :root {
+    /* tokens del estilo: UN acento. --title = tinta de títulos y píldoras; --shadow-rgb = la misma tinta en r,g,b para sombras */
+    --bg: #fdfcff; --ink: #16131f; --ink-2: #625a72; --accent: #7048e8; --title: #2a1863;
+    --tint: #f3efff; --tint-2: #e4dbff; --card: #fefdff; --shadow-rgb: 42,24,99;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; letter-spacing: -0.045em;
+             line-height: 0.95; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* las cifras del «dato clave» y de las barras usan números tabulares para que el conteo no baile */
+  .num { font-variant-numeric: tabular-nums; }
+  /* una línea es una máscara: las palabras suben por ella. 0.24em arriba deja sitio a tildes y signos ¿ ¡ */
+  .line { position: absolute; overflow: hidden; padding: 0.24em 0.04em 0.2em; margin: -0.24em -0.04em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .card { position: absolute; background: var(--card); border-radius: 28px;
+          box-shadow: 0 2px 6px rgba(0,0,0,.05), 0 30px 80px -20px rgba(0,0,0,.22); }
+  .ui { position:absolute; left:0; top:0; transform-origin:0 0; overflow:hidden; background: var(--card);
+        box-shadow: 0 2px 6px rgba(var(--shadow-rgb),.06), 0 40px 90px -24px rgba(var(--shadow-rgb),.32); }
+  .ui img, .ui canvas { position:absolute; left:0; top:0; display:block; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="paneles.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

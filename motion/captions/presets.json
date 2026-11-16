@@ -1,0 +1,41 @@
+{
+  "_note": "Named caption looks. A project picks one with timeline.captions.preset; its own keys override the preset (accent = brand colour, y, keywords, emoji…). init.sh copies this file to film/lib/caption_presets.json; sync.mjs merges it. Add every format learned from a reference here (reference/CAPTIONS.md) and log it in the catalog. _meta is documentation only.",
+
+  "pill-sobrio": {
+    "style": "pill", "y": 0.72, "maxChars": 34,
+    "_meta": { "house": true, "useFor": "premium, medical, B2B (clínicas, marcas médicas): quiet, never competes with the film's own type", "learnedFrom": "motion-reel v2 default", "added": "2026-10-11" }
+  },
+
+  "karaoke-amarillo": {
+    "style": "karaoke", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "accent": "#FFD43B", "strokeColor": "#000",
+    "maxWords": 4, "maxChars": 22, "bump": 0.1, "y": 0.70,
+    "_meta": { "house": true, "useFor": "talking heads, education, VO-led social ads (talking heads propios)", "learnedFrom": "talking-head word captions (Montserrat ExtraBold, keywords #FFD43B, black outline) + AutoCaptions-type packs", "added": "2026-11-09" }
+  },
+
+  "pop-energia": {
+    "style": "pop", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "accent": "#FFD43B", "maxWords": 3,
+    "_meta": { "useFor": "energetic social ads, fast VO, offers", "learnedFrom": "viral word-pop caption packs", "added": "2026-11-09" }
+  },
+
+  "box-marca": {
+    "style": "box", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "boxText": "#111",
+    "_meta": { "useFor": "brand-coloured highlight: set accent/boxColor to the brand accent when it is light enough for dark text", "learnedFrom": "highlight-box caption packs", "added": "2026-11-09" }
+  },
+
+  "palabra-hook": {
+    "style": "word", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "y": 0.62,
+    "_meta": { "useFor": "hooks and short punchy VO; one big word at a time", "learnedFrom": "single-word caption packs", "added": "2026-11-09" }
+  },
+
+  "subrayado": {
+    "style": "karaoke", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "upper": false, "highlight": "underline",
+    "upcoming": "dim", "bump": 0, "accent": "#FFD43B", "size": 70,
+    "_meta": { "useFor": "calmer read-along: sentence case, accent underline slides under the spoken word", "learnedFrom": "knob demo", "added": "2026-11-09" }
+  },
+
+  "caja-blanca": {
+    "style": "karaoke", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "bg": "#ffffff", "color": "#111",
+    "pastColor": "#111", "accent": "#E8336D", "stroke": 0, "shadow": "none", "bump": 0.06, "maxWords": 3, "size": 66,
+    "_meta": { "useFor": "busy or light footage where an outline isn't enough: dark words on a white card, spoken word in accent", "learnedFrom": "TikTok-style boxed captions", "added": "2026-11-09" }
+  }
+}

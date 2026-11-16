@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tarjeta escenario · demo</title>
+<style>
+  /* Una sola familia (Plus Jakarta Sans, SIL OFL 1.1). Copia fonts/ del estilo a assets/fonts/ del proyecto. */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/PlusJakartaSans-400.ttf); font-weight: 400; }
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/PlusJakartaSans-500.ttf); font-weight: 500; }
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/PlusJakartaSans-600.ttf); font-weight: 600; }
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/PlusJakartaSans-700.ttf); font-weight: 700; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/PlusJakartaSans-500.ttf); font-weight: 500; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/PlusJakartaSans-600.ttf); font-weight: 600; }
+  :root {
+    /* Tokens del estilo (cámbialos por los de tu marca). UN solo acento en dos tonos: texto y relleno. */
+    --bg: #F3F4F0;          /* fondo: lienzo de todas las secciones */
+    --surface: #E6EAE3;     /* superficie: píldoras, fila resaltada, marcador de clip */
+    --line: #D3D9D0;        /* separadores, arcos vacíos */
+    --rail: #CBD2C8;        /* riel y puntos apagados */
+    --ink: #15201B;         /* tinta: titulares, indicadores, rellenos */
+    --ink-2: #4F5B55;       /* texto secundario, píldoras inactivas */
+    --muted: #6D7871;       /* eyebrows y etiquetas de riel */
+    --accent: #2B6B59;      /* acento de TEXTO sobre fondo claro (palabra clave) */
+    --accent-fill: #3E8E78; /* acento de RELLENO y acento sobre oscuro */
+    --night: #15201B;       /* campo del cierre */
+    --diagram-1: #C9D0C6; --diagram-2: #8E9A92; --diagram-3: #6F7C74;   /* grises del diagrama */
+    --card: #FBFCFA;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 400; letter-spacing: -0.035em;
+             line-height: 1.02; white-space: nowrap; }
+  /* una línea es una máscara: las palabras suben por ella. El padding superior protege tildes y signos ¿ ¡ */
+  .line { position: absolute; overflow: hidden; padding: 0.32em 0.05em 0.3em; margin: -0.32em -0.05em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .eyebrow { position: absolute; font-family: 'UI'; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .stagecard { position: absolute; overflow: hidden; background: var(--surface); }
+  .pill { position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 999px; font-family: 'UI'; font-weight: 600; white-space: nowrap; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="tarjeta.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

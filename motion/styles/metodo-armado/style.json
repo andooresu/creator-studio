@@ -1,0 +1,39 @@
+{
+  "id": "metodo-armado",
+  "name": "Método armado",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Del caos al método: fichas desordenadas que se ordenan en una lista y un carrusel «Paso N» con barra de progreso, sobre fondo claro, títulos grandes que suben palabra por palabra y un solo acento. Para presentar un método, programa o plan (cursos por semanas, programas por fases, membresías con ruta clara) en 9:16 y 4:5.",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#fcfbf8",
+      "#1d1b19",
+      "#6b655e",
+      "#ef6a3a",
+      "#5b1a33",
+      "#fdf0e8",
+      "#fbdccb"
+    ],
+    "fonts": [
+      "Montserrat",
+      "Lato"
+    ]
+  },
+  "captionPreset": "pill-sobrio",
+  "files": [
+    "demo/film.js",
+    "demo/index.html",
+    "demo/preview.jpg",
+    "demo/timeline.json",
+    "fonts/Lato-Black.ttf",
+    "fonts/Lato-Bold.ttf",
+    "fonts/Lato-Regular.ttf",
+    "fonts/Montserrat.ttf",
+    "fonts/OFL.md",
+    "guide.md",
+    "helpers/armado.js"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

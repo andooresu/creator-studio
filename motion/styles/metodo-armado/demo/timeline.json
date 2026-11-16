@@ -1,0 +1,69 @@
+{
+  "note": "Demo del estilo Método armado. Todo en BEATS (120 BPM nominal hasta que exista beats.json). Copia este archivo a la raíz del proyecto y ejecuta node scripts/sync.mjs.",
+  "title": "Método armado — demo",
+  "duration": 13,
+  "fps": 60,
+  "bpm": 120,
+  "formats": ["9x16", "4x5"],
+  "music": {
+    "source": "synth",
+    "chords": ["Dm7", "G7", "Cmaj7", "Am7"],
+    "sections": [
+      { "at": "hook", "kind": "intro" },
+      { "at": "orden", "kind": "full" },
+      { "at": "giro", "kind": "build" },
+      { "at": "end", "kind": "drop" }
+    ]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0,
+    "hook_w2": 1,
+    "dchip": 2,
+    "orden": 4,
+    "paso_t": 5.5,
+    "ring": 5.75,
+    "ring_end": 7.25,
+    "pasos": 8,
+    "p1": 8.25,
+    "p2": 10.5,
+    "p3": 12.75,
+    "giro": 15,
+    "pills": 16.25,
+    "end": 19,
+    "cta": 20.75,
+    "recap": 22,
+    "done": 26
+  },
+  "sfx": [
+    { "at": "hook", "type": "pop", "gain": 0.7, "what": "fila 1 del hook en el cuadro 0" },
+    { "at": "hook_w2", "type": "click", "gain": 0.55, "what": "palabra acentuada del hook" },
+    { "at": "dchip", "type": "pop", "gain": 0.45, "what": "chip de duda 1" },
+    { "at": 2.25, "type": "pop", "gain": 0.45, "what": "chip de duda 2" },
+    { "at": 2.5, "type": "pop", "gain": 0.45, "what": "chip de duda 3" },
+    { "at": "orden", "type": "whoosh", "gain": 0.6, "what": "caos → orden: las fichas se vuelven filas" },
+    { "at": "paso_t", "type": "pop", "gain": 0.5, "what": "título «Cada paso…»" },
+    { "at": "ring", "to": "ring_end", "every": 0.375, "type": "tick", "gain": 0.3, "what": "el anillo recorre las filas" },
+    { "at": "pasos", "type": "whoosh", "gain": 0.6, "what": "panel claro cubre (termina en el beat)" },
+    { "at": "p1", "type": "pop", "gain": 0.55, "what": "Paso 1 + tarjeta" },
+    { "at": "p2", "type": "pop", "gain": 0.55, "what": "Paso 2 + tarjeta" },
+    { "at": "p3", "type": "pop", "gain": 0.55, "what": "Paso 3 + tarjeta" },
+    { "at": "giro", "type": "whoosh", "gain": 0.55, "what": "panel sube desde abajo" },
+    { "at": "giro", "type": "click", "gain": 0.6, "what": "chip de giro crece" },
+    { "at": "pills", "to": 17.25, "every": 0.25, "type": "tick", "gain": 0.35, "what": "pills de secuencia" },
+    { "at": "end", "type": "whoosh", "gain": 0.55, "what": "panel del cierre" },
+    { "at": "end", "type": "thump", "gain": 0.9, "what": "lockup cae pesado" },
+    { "at": "cta", "type": "pop", "gain": 0.65, "what": "píldora CTA crece" },
+    { "at": "recap", "type": "pop", "gain": 0.4, "what": "abanico de tarjetas" },
+    { "at": 24, "type": "click", "gain": 0.4, "what": "latido de la píldora" }
+  ],
+  "captions": {
+    "formats": ["9x16"],
+    "preset": "pill-sobrio",
+    "skip": []
+  },
+  "lint": {
+    "minText": {},
+    "ignore": []
+  }
+}

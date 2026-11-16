@@ -1,0 +1,13 @@
+{
+  "id": "talking-karaoke",
+  "name": "Talking karaoke",
+  "kind": "talking",
+  "origin": "base",
+  "description": "Persona a cámara con subtítulos karaoke palabra por palabra, punch-ins en los énfasis y b-roll que entra sobre la imagen. Para talking heads, opinión, educación corta y anuncios guiados por la voz en 9:16.",
+  "guide": "",
+  "tokens": { "palette": ["#000000", "#ffffff", "#ffd43b", "#111111"], "fonts": ["Montserrat"] },
+  "captionPreset": "karaoke-amarillo",
+  "files": [],
+  "sources": [],
+  "createdAt": "2026-11-01T00:00:00.000Z"
+}

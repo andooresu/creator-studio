@@ -1,0 +1,141 @@
+/* Andoo · tema Framer (solo oscuro) sobre Tailwind v4 + variables de shadcn/ui.
+   Referencia: shadcn.io/design/framer (lienzo #090909, superficies #141414/#1c1c1c, tinta blanca, un solo azul
+   #0099ff para foco/enlaces/selección, píldoras blancas). Los tokens que la referencia no define (destructive,
+   warning, chart, sidebar) son derivados y están marcados con «derivado». */
+/* Orden de capas: los estilos heredados (styles.css) van después del reset de Tailwind pero ANTES de sus utilidades,
+   así una clase de Tailwind siempre gana a una regla vieja (p. ej. h3 o input) sin tener que usar «!». */
+@layer theme, base, legacy, components, utilities;
+@import "tailwindcss";
+@import "./styles.css" layer(legacy);
+@import "tw-animate-css";
+
+/* Inter variable autoalojada (OFL): funciona sin internet y sin salto de fuente. */
+@font-face {
+  font-family: "Inter";
+  src: url("./assets/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("./assets/fonts/InterVariable-LatinExt.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color-scheme: dark;
+  /* Framer */
+  --canvas: #090909;
+  --surface-1: #141414;
+  --surface-2: #1c1c1c;
+  --surface-3: #2a2a2a;            /* derivado: pistas de barras, hover/selección sobre surface-2 */
+  --ink: #ffffff;
+  --ink-muted: #999999;
+  --ink-faint: #6b6b6b;            /* derivado */
+  --hairline: #262626;
+  --hairline-soft: #1a1a1a;
+  --blue: #0099ff;
+  --success: #22c55e;
+  --warning: #f5a524;              /* derivado */
+  --danger: #ff4d4f;               /* derivado */
+  --g-violet: #6a4cf5; --g-magenta: #d44df0; --g-orange: #ff7a3d; --g-coral: #ff5577;
+  --gradient-brand: linear-gradient(135deg, var(--g-violet) 0%, var(--g-magenta) 55%, var(--g-orange) 100%);
+
+  /* shadcn/ui */
+  --radius: 10px;
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface-1);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: #000000;
+  --secondary: var(--surface-1);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-1);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--surface-3);      /* hover/selección: un escalón sobre popover (surface-2) */
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--blue);
+  --chart-1: var(--blue); --chart-2: var(--g-magenta); --chart-3: var(--g-orange); --chart-4: var(--success); --chart-5: var(--g-violet);
+  --sidebar: var(--canvas);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--hairline-soft);
+  --sidebar-ring: var(--blue);
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1); --color-chart-2: var(--chart-2); --color-chart-3: var(--chart-3); --color-chart-4: var(--chart-4); --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-blue: var(--blue);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 15px;
+  --radius-xl: 20px;
+  --radius-2xl: 30px;
+  --shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.1) inset, 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/60; }
+  html, body { @apply bg-background text-foreground; }
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss03";
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* foco visible en todo lo interactivo (azul Framer) */
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  }
+}
+
+@utility bg-gradient-brand { background-image: var(--gradient-brand); }

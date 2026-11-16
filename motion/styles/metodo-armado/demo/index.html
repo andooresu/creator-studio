@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Método armado · demo</title>
+<style>
+  /* Display: Montserrat (variable). UI: Lato 400/700/900. Ambas SIL OFL 1.1: copia fonts/ del estilo a assets/fonts/ del proyecto. */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/Montserrat.ttf) format('truetype'); font-weight: 100 900; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Lato-Regular.ttf) format('truetype'); font-weight: 400; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Lato-Bold.ttf) format('truetype'); font-weight: 600 700; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Lato-Black.ttf) format('truetype'); font-weight: 800 900; }
+  :root {
+    /* Tokens del estilo (cámbialos por los de tu marca). UN solo acento; los títulos llevan su propio color profundo. */
+    --bg: #fcfbf8;        /* fondo: blanco cálido, siempre claro */
+    --ink: #1d1b19;       /* tinta UI: textos de tarjetas y filas */
+    --ink-2: #6b655e;     /* tinta secundaria: sublíneas */
+    --accent: #ef6a3a;    /* acento único: palabra clave, canto del panel, anillo, progreso, puntos */
+    --title: #5b1a33;     /* tinta de títulos y relleno de chips/píldora final */
+    --tint: #fdf0e8;      /* tinte suave: halo exterior, pistas vacías */
+    --tint-2: #fbdccb;    /* tinte fuerte: centro del halo, segmentos sin llenar */
+    --shadow: 91,26,51;   /* r,g,b de las sombras (el color de los títulos) */
+    --card: #fff;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; letter-spacing: -0.035em;
+             line-height: 0.95; white-space: nowrap; }
+  /* una línea es una máscara: las palabras suben por ella. Padding ≥ 0.24em arriba para tildes. */
+  .line { position: absolute; overflow: hidden; padding: 0.24em 0.04em 0.2em; margin: -0.24em -0.04em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .card { position: absolute; background: var(--card); border-radius: 26px;
+          box-shadow: 0 2px 6px rgba(var(--shadow),.06), 0 30px 60px -20px rgba(var(--shadow),.5); }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="armado.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

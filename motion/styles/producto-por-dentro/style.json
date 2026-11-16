@@ -1,0 +1,37 @@
+{
+  "id": "producto-por-dentro",
+  "name": "Producto por dentro",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Recorrido de producto por dentro: un contador tipo rodillo que gira hasta su cifra, un cursor que actúa sobre la interfaz y un reproductor que crece desde la fila pulsada, sobre fondo claro con paneles de filo de acento y titulares display que suben renglón por renglón. Para mostrar una app, una plataforma o un curso por dentro en reels de 13 a 30 segundos, con voz en off en segunda persona o como showreel sin voz.",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#fcfcfa",
+      "#16181d",
+      "#5f6470",
+      "#0e9f6e",
+      "#0b3d33",
+      "#e8f6f0",
+      "#cfeee1"
+    ],
+    "fonts": [
+      "Manrope",
+      "Inter"
+    ]
+  },
+  "captionPreset": "pill-sobrio",
+  "files": [
+    "guide.md",
+    "helpers/producto.js",
+    "demo/film.js",
+    "demo/index.html",
+    "demo/timeline.json",
+    "demo/preview.jpg",
+    "fonts/Manrope-var.woff2",
+    "fonts/Inter-var.woff2",
+    "fonts/OFL.md"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

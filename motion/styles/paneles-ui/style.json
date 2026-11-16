@@ -1,0 +1,35 @@
+{
+  "id": "paneles-ui",
+  "name": "Paneles con UI",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Prueba visual en interfaz: un comparador antes/después con cortina y la escena «dato clave», donde un anillo se cierra sobre la fila que importa, la cámara hace zoom y la cifra aterriza y cuenta; barras de comparación para respaldarla. Fondo claro con halo violeta, retícula de puntos al beat, paneles que cubren la escena y una sola familia tipográfica (Manrope). Para comparar, probar un resultado o defender un dato en reels de 15 a 30 s.",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#fdfcff",
+      "#16131f",
+      "#625a72",
+      "#7048e8",
+      "#2a1863",
+      "#f3efff",
+      "#e4dbff"
+    ],
+    "fonts": [
+      "Manrope"
+    ]
+  },
+  "captionPreset": "pill-sobrio",
+  "files": [
+    "demo/film.js",
+    "demo/index.html",
+    "demo/preview.jpg",
+    "demo/timeline.json",
+    "fonts/Manrope-var.woff2",
+    "fonts/OFL.md",
+    "guide.md",
+    "helpers/paneles.js"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

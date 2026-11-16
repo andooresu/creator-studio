@@ -1,0 +1,39 @@
+{
+  "id": "ilustrado-sereno",
+  "name": "Ilustrado sereno",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Ilustración amable y pausada con un personaje plano dibujado en canvas: un fondo constante, tipografía grande que sube palabra por palabra y una pequeña historia (duda, guía, detalle con luz suave, «mientras esperas» y llamada a la acción). Pensado para salas de espera, pantallas informativas y mensajes calmados que se entienden sin sonido; también funciona como reel de 12 a 30 s.",
+  "guide": "",
+  "captionPreset": "pill-sobrio",
+  "tokens": {
+    "palette": [
+      "#2f2c5c",
+      "#fffdf8",
+      "#d9d5f0",
+      "#8de2c6",
+      "#f06c93",
+      "#433f7e"
+    ],
+    "fonts": [
+      "Poppins",
+      "Inter"
+    ]
+  },
+  "files": [
+    "demo/film.js",
+    "demo/index.html",
+    "demo/preview.jpg",
+    "demo/timeline.json",
+    "fonts/OFL.md",
+    "fonts/inter-500.woff2",
+    "fonts/inter-600.woff2",
+    "fonts/poppins-700.woff2",
+    "fonts/poppins-800.woff2",
+    "fonts/poppins-900.woff2",
+    "guide.md",
+    "helpers/ilustrado.js"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

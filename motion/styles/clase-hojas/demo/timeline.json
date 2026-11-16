@@ -1,0 +1,25 @@
+{
+  "note": "Timeline de la demo «Clase en hojas». Una marca por sección (s1…sN) en el downbeat anterior a su primera palabra, más endcard y done. Copia como timeline.json del proyecto y ajusta marcas, duración y bpm a tu voz.",
+  "title": "Demo — Clase en hojas",
+  "duration": 14.4,
+  "fps": 30,
+  "bpm": 100,
+  "formats": ["9x16", "16x9"],
+  "music": {
+    "source": "synth",
+    "chords": ["Dmaj7", "Bm7", "Gmaj7", "A"],
+    "sections": [{ "at": "s1", "kind": "intro" }, { "at": "s2", "kind": "full" }, { "at": "endcard", "kind": "drop" }]
+  },
+  "voiceover": null,
+  "marks": { "s1": 0, "s2": 8, "s3": 15, "s4": 19, "endcard": 22, "done": 24 },
+  "sfx": [
+    { "at": "s2", "type": "whoosh", "gain": 0.45, "what": "empuje de hoja → El porqué" },
+    { "at": "s3", "type": "whoosh", "gain": 0.45, "what": "empuje de hoja → Errores frecuentes" },
+    { "at": "s4", "type": "whoosh", "gain": 0.45, "what": "empuje de hoja → Puntos clave" },
+    { "at": "endcard", "type": "whoosh", "gain": 0.4, "what": "empuje de hoja → cierre" },
+    { "at": "endcard", "type": "thump", "gain": 0.7, "what": "el logo late en el cierre" }
+  ],
+  "mix": { "music": -11, "sfx": -8, "vo": 0, "duck": true },
+  "captions": { "formats": [], "preset": "pill-sobrio", "skip": [] },
+  "lint": { "minText": {}, "ignore": [] }
+}

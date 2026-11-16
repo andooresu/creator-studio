@@ -1,0 +1,590 @@
+{
+ "transitions": {
+  "Passing Light": {
+   "id": "C8C2D772-F86E-4CC2-B4C1-E7F82D9DDA06",
+   "type": "transition",
+   "name": "Passing Light",
+   "effect_id": "7561646288811380021",
+   "resource_id": "7561646288811380021",
+   "third_resource_id": "0",
+   "source_platform": 1,
+   "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7561646288811380021/1f342761bb39cd53fbd8a761215e196a",
+   "duration": 2000000,
+   "is_overlap": true,
+   "platform": "all",
+   "category_id": "25822",
+   "category_name": "Trending",
+   "request_id": "202605012231205F0F680509A943927536",
+   "is_ai_transition": false,
+   "video_path": "",
+   "task_id": ""
+  },
+  "Twinkle Zoom": {
+   "id": "FDD544C0-2CCA-465C-8B44-A8D9AE5EC0B3",
+   "type": "transition",
+   "name": "Twinkle Zoom",
+   "effect_id": "7452646287326843393",
+   "resource_id": "7452646287326843393",
+   "third_resource_id": "7452646287326843393",
+   "source_platform": 1,
+   "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7452646287326843393/7eeeca7c07e67b54519995ebdf71d6fc",
+   "duration": 266666,
+   "is_overlap": true,
+   "platform": "all",
+   "category_id": "25822",
+   "category_name": "remen",
+   "request_id": "20250721212218DA1B0C15388FFD3D9322",
+   "is_ai_transition": false,
+   "video_path": "",
+   "task_id": ""
+  },
+  "Camera Glow": {
+   "id": "EA4094C8-3942-47C3-8F5D-3B8C8ABBF290",
+   "type": "transition",
+   "name": "Camera Glow",
+   "effect_id": "7480386884728917254",
+   "resource_id": "7480386884728917254",
+   "third_resource_id": "0",
+   "source_platform": 1,
+   "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7480386884728917254/56e4dca1f4540d77784eaf42a3fe6ea5",
+   "duration": 666666,
+   "is_overlap": true,
+   "platform": "all",
+   "category_id": "25822",
+   "category_name": "remen",
+   "request_id": "20250721212218DA1B0C15388FFD3D9322",
+   "is_ai_transition": false,
+   "video_path": "",
+   "task_id": ""
+  },
+  "Glare II": {
+   "id": "0200F401-AB07-4A4A-B07A-801701B760E2",
+   "type": "transition",
+   "name": "Glare II",
+   "effect_id": "6952697917563998722",
+   "resource_id": "6952697917563998722",
+   "third_resource_id": "6952697917563998722",
+   "source_platform": 1,
+   "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6952697917563998722/cc239062719b30560258b835ee609e97",
+   "duration": 266666,
+   "is_overlap": false,
+   "platform": "all",
+   "category_id": "25822",
+   "category_name": "remen",
+   "request_id": "202507280134497DD7B1DA0288749E65F8",
+   "is_ai_transition": false,
+   "video_path": "",
+   "task_id": ""
+  },
+  "Heat Swipe": {
+   "id": "6A12F4E5-C481-42B2-BC63-73A0D894C6F6",
+   "type": "transition",
+   "name": "Heat Swipe",
+   "effect_id": "7607754820593650962",
+   "resource_id": "7607754820593650962",
+   "third_resource_id": "0",
+   "source_platform": 1,
+   "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7607754820593650962/784ecb419c95e27b0ea18f8adc7a0b97",
+   "duration": 266666,
+   "is_overlap": true,
+   "platform": "all",
+   "category_id": "25826",
+   "category_name": "guangxiao",
+   "request_id": "20260714034455F655BC5EF18A3356D322",
+   "is_ai_transition": false,
+   "video_path": "",
+   "task_id": ""
+  },
+  "Glare": {
+   "id": "460C4CD3-75A5-44A1-98B6-3A16AE75D749",
+   "type": "transition",
+   "name": "Glare",
+   "effect_id": "6726707814028284423",
+   "resource_id": "6726707814028284423",
+   "third_resource_id": "6726707814028284423",
+   "source_platform": 1,
+   "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6726707814028284423/a07b3b9a6bb937d04fcb8ecf5e009a7e",
+   "duration": 466666,
+   "is_overlap": true,
+   "platform": "all",
+   "category_id": "25826",
+   "category_name": "guangxiao",
+   "request_id": "20260714034455F655BC5EF18A3356D322",
+   "is_ai_transition": false,
+   "video_path": "",
+   "task_id": ""
+  }
+ },
+ "text_animations": {
+  "in:Scramble Unfurl": {
+   "material": {
+    "id": "7798F24A-7034-4CFC-8C57-983FEF867C90",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "7664535480884628743",
+      "type": "in",
+      "start": 0,
+      "duration": 500000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7664535480884628743/dce1c880c27a124d5e8883722e03058d",
+      "platform": "all",
+      "resource_id": "7664535480884628743",
+      "third_resource_id": "0",
+      "source_platform": 1,
+      "name": "Scramble Unfurl",
+      "category_id": "ruchang",
+      "category_name": "In",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "2026091323392989860F323097C16C6E94"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "7664535480884628743",
+    "type": "in",
+    "start": 0,
+    "duration": 500000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7664535480884628743/dce1c880c27a124d5e8883722e03058d",
+    "platform": "all",
+    "resource_id": "7664535480884628743",
+    "third_resource_id": "0",
+    "source_platform": 1,
+    "name": "Scramble Unfurl",
+    "category_id": "ruchang",
+    "category_name": "In",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "2026091323392989860F323097C16C6E94"
+   }
+  },
+  "in:Typing Cursor": {
+   "material": {
+    "id": "9DB42623-C926-4214-9149-5C82E4CC2D90",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "7208392434831593985",
+      "type": "in",
+      "start": 0,
+      "duration": 300000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7208392434831593985/12196518b89652860631d196d19b6f45",
+      "platform": "all",
+      "resource_id": "7208392434831593985",
+      "third_resource_id": "7208392434831593985",
+      "source_platform": 1,
+      "name": "Typing Cursor",
+      "category_id": "ruchang",
+      "category_name": "In",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "202507212122219F782E25576E3B4049B3"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "7208392434831593985",
+    "type": "in",
+    "start": 0,
+    "duration": 300000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7208392434831593985/12196518b89652860631d196d19b6f45",
+    "platform": "all",
+    "resource_id": "7208392434831593985",
+    "third_resource_id": "7208392434831593985",
+    "source_platform": 1,
+    "name": "Typing Cursor",
+    "category_id": "ruchang",
+    "category_name": "In",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "202507212122219F782E25576E3B4049B3"
+   }
+  },
+  "in:Pop Up": {
+   "material": {
+    "id": "8928847F-7448-4B9E-9D63-52A83CB7CF69",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "7145435451946439170",
+      "type": "in",
+      "start": 0,
+      "duration": 300000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7145435451946439170/28d9145ead32c23742082a37e511370e",
+      "platform": "all",
+      "resource_id": "7145435451946439170",
+      "third_resource_id": "7145435451946439170",
+      "source_platform": 1,
+      "name": "Pop Up",
+      "category_id": "ruchang",
+      "category_name": "In",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "202507212122219F782E25576E3B4049B3"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "7145435451946439170",
+    "type": "in",
+    "start": 0,
+    "duration": 300000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7145435451946439170/28d9145ead32c23742082a37e511370e",
+    "platform": "all",
+    "resource_id": "7145435451946439170",
+    "third_resource_id": "7145435451946439170",
+    "source_platform": 1,
+    "name": "Pop Up",
+    "category_id": "ruchang",
+    "category_name": "In",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "202507212122219F782E25576E3B4049B3"
+   }
+  },
+  "in:Cyber Field": {
+   "material": {
+    "id": "F93616A0-2C65-4DE4-88B7-921839454D27",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "7615487911500320013",
+      "type": "in",
+      "start": 0,
+      "duration": 500000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7615487911500320013/021dec8b8dc396b3eeaea088bb261e62",
+      "platform": "all",
+      "resource_id": "7615487911500320013",
+      "third_resource_id": "0",
+      "source_platform": 1,
+      "name": "Cyber Field",
+      "category_id": "ruchang",
+      "category_name": "In",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "20260604001040A30EEFCA62D4F358C6DF"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "7615487911500320013",
+    "type": "in",
+    "start": 0,
+    "duration": 500000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7615487911500320013/021dec8b8dc396b3eeaea088bb261e62",
+    "platform": "all",
+    "resource_id": "7615487911500320013",
+    "third_resource_id": "0",
+    "source_platform": 1,
+    "name": "Cyber Field",
+    "category_id": "ruchang",
+    "category_name": "In",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "20260604001040A30EEFCA62D4F358C6DF"
+   }
+  },
+  "in:Slide Up": {
+   "material": {
+    "id": "AA1064C4-A6F5-4CD9-8919-8BF2D51A862B",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "6763470111253729803",
+      "type": "in",
+      "start": 0,
+      "duration": 500000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6763470111253729803/7369b47c2bd5267948b0422f69f686c0",
+      "platform": "all",
+      "resource_id": "6763470111253729803",
+      "third_resource_id": "6763470111253729803",
+      "source_platform": 1,
+      "name": "Slide Up",
+      "category_id": "ruchang",
+      "category_name": "text",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "2026071204230400000000000046527A1"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "6763470111253729803",
+    "type": "in",
+    "start": 0,
+    "duration": 500000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6763470111253729803/7369b47c2bd5267948b0422f69f686c0",
+    "platform": "all",
+    "resource_id": "6763470111253729803",
+    "third_resource_id": "6763470111253729803",
+    "source_platform": 1,
+    "name": "Slide Up",
+    "category_id": "ruchang",
+    "category_name": "text",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "2026071204230400000000000046527A1"
+   }
+  },
+  "in:Laser Cut": {
+   "material": {
+    "id": "10928195-4F7D-422B-AFD1-F34A4537D9B8",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "7229621702668325378",
+      "type": "in",
+      "start": 0,
+      "duration": 500000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7229621702668325378/13af392780a07d813da825f3abfcc0bc",
+      "platform": "all",
+      "resource_id": "7229621702668325378",
+      "third_resource_id": "7229621702668325378",
+      "source_platform": 1,
+      "name": "Laser Cut",
+      "category_id": "ruchang",
+      "category_name": "In",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "20260714032120C002BD78391F868C83EC"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "7229621702668325378",
+    "type": "in",
+    "start": 0,
+    "duration": 500000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7229621702668325378/13af392780a07d813da825f3abfcc0bc",
+    "platform": "all",
+    "resource_id": "7229621702668325378",
+    "third_resource_id": "7229621702668325378",
+    "source_platform": 1,
+    "name": "Laser Cut",
+    "category_id": "ruchang",
+    "category_name": "In",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "20260714032120C002BD78391F868C83EC"
+   }
+  },
+  "in:Fade In": {
+   "material": {
+    "id": "0DE7E879-B062-4159-B719-8257B421CE33",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "6798320778182922760",
+      "type": "in",
+      "start": 0,
+      "duration": 500000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6798320778182922760/883ad04bd79b502aaa55b5d9b87175ea",
+      "platform": "all",
+      "resource_id": "6798320778182922760",
+      "third_resource_id": "6798320778182922760",
+      "source_platform": 1,
+      "name": "Fade In",
+      "category_id": "2037708297",
+      "category_name": "",
+      "panel": "video",
+      "material_type": "video",
+      "anim_adjust_params": null,
+      "request_id": "20260313114949AE88029EB9BB269CE7EA"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "6798320778182922760",
+    "type": "in",
+    "start": 0,
+    "duration": 500000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6798320778182922760/883ad04bd79b502aaa55b5d9b87175ea",
+    "platform": "all",
+    "resource_id": "6798320778182922760",
+    "third_resource_id": "6798320778182922760",
+    "source_platform": 1,
+    "name": "Fade In",
+    "category_id": "2037708297",
+    "category_name": "",
+    "panel": "video",
+    "material_type": "video",
+    "anim_adjust_params": null,
+    "request_id": "20260313114949AE88029EB9BB269CE7EA"
+   }
+  },
+  "out:Slide Up": {
+   "material": {
+    "id": "A8E56F04-36E4-4862-B54C-65E8C90C09CB",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "6798333487523828238",
+      "type": "in",
+      "start": 0,
+      "duration": 1233333,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6798333487523828238/51657913dffa9f4c5f9d4411b53611e5",
+      "platform": "all",
+      "resource_id": "6798333487523828238",
+      "third_resource_id": "6798333487523828238",
+      "source_platform": 1,
+      "name": "Slide Up",
+      "category_id": "in",
+      "category_name": "in",
+      "panel": "video",
+      "material_type": "video",
+      "anim_adjust_params": null,
+      "request_id": ""
+     },
+     {
+      "id": "6798333612958683656",
+      "type": "out",
+      "start": 3200000,
+      "duration": 500000,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6798333612958683656/443a2085da756085ed06e2e338f76523",
+      "platform": "all",
+      "resource_id": "6798333612958683656",
+      "third_resource_id": "6798333612958683656",
+      "source_platform": 1,
+      "name": "Slide Up",
+      "category_id": "out",
+      "category_name": "out",
+      "panel": "video",
+      "material_type": "video",
+      "anim_adjust_params": null,
+      "request_id": "20260720120209D9195C573C782E1EB760"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "6798333612958683656",
+    "type": "out",
+    "start": 3200000,
+    "duration": 500000,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/6798333612958683656/443a2085da756085ed06e2e338f76523",
+    "platform": "all",
+    "resource_id": "6798333612958683656",
+    "third_resource_id": "6798333612958683656",
+    "source_platform": 1,
+    "name": "Slide Up",
+    "category_id": "out",
+    "category_name": "out",
+    "panel": "video",
+    "material_type": "video",
+    "anim_adjust_params": null,
+    "request_id": "20260720120209D9195C573C782E1EB760"
+   }
+  },
+  "in:Letter Pop-In": {
+   "material": {
+    "id": "6B0140C6-E70C-4017-915D-B50667019658",
+    "type": "sticker_animation",
+    "animations": [
+     {
+      "id": "7648939575590538516",
+      "type": "in",
+      "start": 0,
+      "duration": 1566666,
+      "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7648939575590538516/7ada33a606f05da622f5d1e928bcbab9",
+      "platform": "all",
+      "resource_id": "7648939575590538516",
+      "third_resource_id": "0",
+      "source_platform": 1,
+      "name": "Letter Pop-In",
+      "category_id": "ruchang",
+      "category_name": "In",
+      "panel": "",
+      "material_type": "sticker",
+      "anim_adjust_params": null,
+      "request_id": "20260723063521471E598E02A9E138840A"
+     }
+    ],
+    "multi_language_current": "none"
+   },
+   "animation": {
+    "id": "7648939575590538516",
+    "type": "in",
+    "start": 0,
+    "duration": 1566666,
+    "path": "{HOME}/Library/Containers/com.lemon.lvoverseas/Data/Movies/CapCut/User Data/Cache/effect/7648939575590538516/7ada33a606f05da622f5d1e928bcbab9",
+    "platform": "all",
+    "resource_id": "7648939575590538516",
+    "third_resource_id": "0",
+    "source_platform": 1,
+    "name": "Letter Pop-In",
+    "category_id": "ruchang",
+    "category_name": "In",
+    "panel": "",
+    "material_type": "sticker",
+    "anim_adjust_params": null,
+    "request_id": "20260723063521471E598E02A9E138840A"
+   }
+  }
+ },
+ "scale_keyframe": {
+  "id": "3D0E7400-E3A0-46A2-87FE-F0E23BA9E8ED",
+  "material_id": "",
+  "property_type": "KFTypeScaleX",
+  "keyframe_list": [
+   {
+    "id": "3F4AC45C-3324-42DD-AC55-31B06A40725F",
+    "curveType": "Line",
+    "time_offset": 0,
+    "left_control": {
+     "x": 0.0,
+     "y": 0.0
+    },
+    "right_control": {
+     "x": 0.0,
+     "y": 0.0
+    },
+    "values": [
+     1.0
+    ],
+    "string_value": "",
+    "graphID": ""
+   },
+   {
+    "id": "4E833DC6-50FC-453B-82DD-144AB112C8D0",
+    "curveType": "Line",
+    "time_offset": 2200000,
+    "left_control": {
+     "x": 0.0,
+     "y": 0.0
+    },
+    "right_control": {
+     "x": 0.0,
+     "y": 0.0
+    },
+    "values": [
+     1.142960735570604
+    ],
+    "string_value": "",
+    "graphID": ""
+   }
+  ]
+ },
+ "uniform_scale": {
+  "on": true,
+  "value": 1.0
+ }
+}

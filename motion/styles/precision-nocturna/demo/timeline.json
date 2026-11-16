@@ -1,0 +1,55 @@
+{
+  "note": "Demo del estilo Precisión nocturna: 28 beats a 124 BPM (13,5 s). Todo en beats; cortes duros en líneas de compás (0, 8, 12, 20, 24). Copia a la raíz del proyecto y corre node scripts/sync.mjs.",
+  "title": "Precisión nocturna — demo",
+  "duration": 13.55,
+  "fps": 60,
+  "bpm": 124,
+  "formats": ["9x16"],
+  "music": {
+    "source": "synth",
+    "chords": ["Am", "F", "C", "G"],
+    "sections": [
+      { "at": "hook", "kind": "full" },
+      { "at": "inside", "kind": "build" },
+      { "at": "end", "kind": "drop" }
+    ],
+    "accents": ["end"]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0, "hook_w2": 1, "hook_w3": 2, "roll": 3, "roll2": 4.5, "brake": 5.5, "ring": 6, "tag": 6.5,
+    "product": 8, "name": 8.5, "dot": 9.5, "pill": 10.5, "ring2": 11,
+    "inside": 12, "step": 13.5, "spots": 16, "cut_line": 18.5,
+    "ui": 20, "ui_b": 20.5, "badge": 22.5, "scan": 22.5, "area": 23, "legal": 23,
+    "end": 24, "logoA": 24.5, "logoB": 25, "ask": 25.25, "cta": 25.75, "handle": 26.5, "handle_end": 27.2,
+    "done": 28
+  },
+  "sfx": [
+    { "at": "hook", "type": "pop", "gain": 0.7, "what": "renglón 1 del hook (ya visible en el frame 0)" },
+    { "at": "hook_w2", "type": "pop", "gain": 0.55, "what": "renglón 2" },
+    { "at": "hook_w3", "type": "pop", "gain": 0.6, "what": "renglón 3" },
+    { "at": "roll", "type": "whoosh", "gain": 0.5, "what": "el equipo acelera" },
+    { "at": "ring", "type": "pop", "gain": 0.6, "what": "anillo de señalamiento" },
+    { "at": "tag", "type": "click", "gain": 0.6, "what": "pastilla" },
+    { "at": "product", "type": "thump", "gain": 0.8, "what": "corte a campo claro + nombre" },
+    { "at": "dot", "type": "pop", "gain": 0.55, "what": "palabra con punto de acento" },
+    { "at": "pill", "type": "click", "gain": 0.6, "what": "pastilla" },
+    { "at": "ring2", "type": "pop", "gain": 0.5, "what": "anillo sobre la pieza" },
+    { "at": "inside", "type": "whoosh", "gain": 0.5, "what": "push-through al corte transversal" },
+    { "at": "step", "type": "pop", "gain": 0.6, "what": "titular + medidor" },
+    { "at": "spots", "to": 18.5, "every": 0.25, "type": "tick", "gain": 0.35, "what": "una ráfaga de puntos por tick" },
+    { "at": "cut_line", "type": "pop", "gain": 0.6, "what": "los puntos se funden en una línea" },
+    { "at": "ui", "type": "shutter", "gain": 0.6, "what": "corte a la pantalla" },
+    { "at": "ui", "to": 22.5, "every": 0.5, "type": "click", "gain": 0.4, "what": "cada panel que llega" },
+    { "at": "badge", "type": "click", "gain": 0.6, "what": "pastilla de afirmación" },
+    { "at": "area", "type": "pop", "gain": 0.5, "what": "recuadro de área" },
+    { "at": "end", "type": "thump", "gain": 0.9, "what": "golpe final: wordmark" },
+    { "at": "logoA", "type": "pop", "gain": 0.5, "what": "logo 1" },
+    { "at": "logoB", "type": "pop", "gain": 0.5, "what": "logo 2" },
+    { "at": "cta", "type": "pop", "gain": 0.7, "what": "pastilla CTA" },
+    { "at": "handle", "type": "click", "gain": 0.6, "what": "primer carácter del handle" }
+  ],
+  "mix": { "music": -9, "sfx": -8, "vo": 0, "duck": true },
+  "captions": { "formats": [], "preset": "pill-sobrio", "skip": [] },
+  "lint": { "minText": {}, "ignore": [] }
+}

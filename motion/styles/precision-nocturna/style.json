@@ -1,0 +1,38 @@
+{
+  "id": "precision-nocturna",
+  "name": "Precisión nocturna",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Técnico nocturno de alta precisión: fondo noche índigo, un cabezal que escanea punto por punto sobre esquemas en línea fina, datos técnicos (medidor, reporte, pantalla que se arma panel por panel) y titulares pesados que suben por máscara en el beat. Para presentar equipos, tecnología y procesos de precisión (máquinas, instrumentos, líneas de producción, laboratorio, software técnico) con afirmaciones verificables y CTA por mensaje directo.",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#0c0e1c",
+      "#f5f1ea",
+      "#a6a3b8",
+      "#ff6b2c",
+      "#86efac",
+      "#4a4860",
+      "#ecebe4"
+    ],
+    "fonts": [
+      "Reddit Sans",
+      "Inter"
+    ]
+  },
+  "captionPreset": "pill-sobrio",
+  "files": [
+    "guide.md",
+    "helpers/precision.js",
+    "demo/film.js",
+    "demo/index.html",
+    "demo/timeline.json",
+    "demo/preview.jpg",
+    "fonts/RedditSans-700.woff2",
+    "fonts/Inter-400.woff2",
+    "fonts/Inter-600.woff2",
+    "fonts/OFL.md"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

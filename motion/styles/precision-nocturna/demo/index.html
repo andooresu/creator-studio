@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Precisión nocturna · demo</title>
+<style>
+  /* Plantilla del estilo "Precisión nocturna". Copia este archivo a film/index.html, las fuentes de ../fonts/ a
+     assets/fonts/ y helpers/precision.js a film/precision.js. Para tu marca cambia las fuentes y los tokens de :root. */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/RedditSans-700.woff2) format('woff2'); font-weight: 700; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Inter-400.woff2) format('woff2'); font-weight: 400; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Inter-600.woff2) format('woff2'); font-weight: 600; }
+  :root {
+    /* noche · tinta · tinta secundaria · acento único (texto clave + CTA) · línea técnica (solo gráfico)
+       · grafito · tarjeta oscura · pista · campo claro */
+    --bg: #0c0e1c; --ink: #f5f1ea; --ink-2: #a6a3b8; --accent: #ff6b2c; --line: #86efac;
+    --graphite: #4a4860; --card: #171a2c; --track: #22253a; --light: #ecebe4; --dark: #0c0e1c;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 700; letter-spacing: -0.02em;
+             line-height: 0.95; white-space: nowrap; }
+  /* un renglón es una máscara: las palabras suben por ella. El padding protege tildes, ¿ ¡ y descendentes. */
+  .line { position: absolute; overflow: hidden; padding: 0.26em 0.04em 0.2em; margin: -0.26em -0.04em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .ui { font-family: 'UI', Arial, sans-serif; font-weight: 600; letter-spacing: -0.01em; }
+  .pill { position: absolute; display: inline-flex; align-items: center; gap: 18px; white-space: nowrap; border-radius: 999px;
+          font-family: 'UI', Arial, sans-serif; font-weight: 600; transform-origin: 0 50%; }
+  body.notext .line, body.notext [data-notext] { visibility: hidden !important; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="precision.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

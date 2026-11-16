@@ -1,0 +1,37 @@
+{
+  "id": "clase-hojas",
+  "name": "Clase en hojas",
+  "kind": "clase",
+  "origin": "base",
+  "description": "La clase o lección por secciones del catálogo (sustituye a la antigua «Clase explicativa», ahora con demo lista, helpers y versión corta vertical): cada sección entra como una hoja empujada desde la derecha, con el contenido atenuado, y cada elemento se enciende justo en la palabra que lo nombra; termina con puntos clave y un cierre «Siguiente clase». Para cursos, módulos de formación y protocolos paso a paso, de 1 a 5 minutos en 16:9 o en cápsulas de 8–30 s en 9:16.",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#fbfaf6",
+      "#1f2a24",
+      "#55605a",
+      "#0f7c74",
+      "#e3f1ee",
+      "#fffdf9",
+      "#c8402f"
+    ],
+    "fonts": [
+      "Manrope",
+      "Inter"
+    ]
+  },
+  "captionPreset": "pill-sobrio",
+  "files": [
+    "guide.md",
+    "helpers/hojas.js",
+    "demo/film.js",
+    "demo/index.html",
+    "demo/timeline.json",
+    "demo/preview.jpg",
+    "fonts/Manrope-var.woff2",
+    "fonts/Inter-var.woff2",
+    "fonts/OFL.md"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

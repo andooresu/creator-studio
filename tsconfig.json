@@ -1,0 +1,23 @@
+{
+  // Un solo tsconfig para servidor (Node 24 ejecuta .ts directo, sin compilar),
+  // tipos compartidos y la interfaz React (Vite la empaqueta).
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": false,
+    "types": ["node"],
+    "paths": { "@/*": ["./web/src/*"] }
+  },
+  "include": ["server/**/*.ts", "shared/**/*.ts", "web/src/**/*.ts", "web/src/**/*.tsx", "vite.config.ts"]
+}

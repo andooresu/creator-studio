@@ -1,0 +1,36 @@
+{
+  "id": "punto-cinetico",
+  "name": "Punto cinético",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Motion design en una sola tipografía (Inter): cada frase termina en un punto de color que hace pop y se abre como iris hacia la escena siguiente; cuenta regresiva tipo rodillo, notificaciones apiladas e interfaz que se arma sola con un cursor que actúa. Para apps, lanzamientos y funciones nuevas en 14 a 30 s, sin metraje de personas.",
+  "captionPreset": "pill-sobrio",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#FCFBF8",
+      "#EFEDE8",
+      "#17151A",
+      "#57525C",
+      "#D61F69",
+      "#FF9CC2",
+      "#1A1220"
+    ],
+    "fonts": [
+      "Inter"
+    ]
+  },
+  "files": [
+    "demo/film.js",
+    "demo/index.html",
+    "demo/preview.jpg",
+    "demo/timeline.json",
+    "fonts/Inter-Variable-LatinExt.woff2",
+    "fonts/Inter-Variable.woff2",
+    "fonts/OFL.md",
+    "guide.md",
+    "helpers/punto.js"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

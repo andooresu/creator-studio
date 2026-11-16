@@ -1,0 +1,38 @@
+{
+  "id": "tarjeta-escenario",
+  "name": "Tarjeta escenario",
+  "kind": "reel",
+  "origin": "base",
+  "description": "Explicador premium sobre lienzo claro: cada sección es una tarjeta redondeada con tu clip, foto o un diagrama dibujado, y el titular siempre debajo, con un solo color de acento, puntos de carrusel y un riel o anillo de tiempo que marca cada cuánto volver. Para explicar un servicio o un cuidado (qué hacer en casa, qué es normal, cuándo regresar) con sobriedad y sin texto sobre las imágenes.",
+  "guide": "",
+  "tokens": {
+    "palette": [
+      "#F3F4F0",
+      "#E6EAE3",
+      "#15201B",
+      "#4F5B55",
+      "#6D7871",
+      "#3E8E78",
+      "#2B6B59"
+    ],
+    "fonts": [
+      "Plus Jakarta Sans"
+    ]
+  },
+  "captionPreset": "pill-sobrio",
+  "files": [
+    "demo/film.js",
+    "demo/index.html",
+    "demo/preview.jpg",
+    "demo/timeline.json",
+    "fonts/OFL.md",
+    "fonts/PlusJakartaSans-400.ttf",
+    "fonts/PlusJakartaSans-500.ttf",
+    "fonts/PlusJakartaSans-600.ttf",
+    "fonts/PlusJakartaSans-700.ttf",
+    "guide.md",
+    "helpers/tarjeta.js"
+  ],
+  "sources": [],
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}

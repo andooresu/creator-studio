@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ilustrado sereno · demo</title>
+<style>
+  /* Una display y una de UI (Poppins + Inter, SIL OFL 1.1). Copia fonts/ del estilo a assets/fonts/ del proyecto. */
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/poppins-800.woff2) format('woff2'); font-weight: 800; }
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/poppins-900.woff2) format('woff2'); font-weight: 900; }
+  @font-face { font-family: 'Display'; src: url(../assets/fonts/poppins-700.woff2) format('woff2'); font-weight: 700; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/inter-500.woff2) format('woff2'); font-weight: 500; }
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/inter-600.woff2) format('woff2'); font-weight: 600; }
+  :root {
+    /* Tokens del estilo (cámbialos por los de tu marca). UN acento + un color de acción. */
+    --bg: #2F2C5C;        /* fondo constante de todas las escenas */
+    --bg-rgb: 47,44,92;   /* el mismo fondo en r,g,b (degradados) */
+    --ink: #FFFDF8;       /* tinta de la tipografía */
+    --ink-2: #D9D5F0;     /* secundario y nota legal */
+    --accent: #8DE2C6;    /* acento único: palabra clave, luz, anillos, borde de tarjeta activa */
+    --action: #F06C93;    /* acción: solo botón, check principal, objeto de acción. Nunca en tipografía */
+    --disc: #433F7E;      /* disco detrás del personaje */
+    --card: #FFFDF8;      /* tarjetas */
+    --card-in: #F1EEF8;   /* interior de tarjetas */
+    --obj: #231F45;       /* tinta oscura de objetos y ojos */
+    --shadow: rgba(10,8,30,0.34);
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: 'UI', 'Helvetica Neue', Arial, sans-serif; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .display { font-family: 'Display', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; letter-spacing: -0.02em;
+             line-height: 1.0; white-space: nowrap; }
+  /* una línea es una máscara: las palabras suben por ella. El padding superior protege tildes y signos ¿ ¡ */
+  .line { position: absolute; overflow: hidden; padding: 0.24em 0.04em 0.2em; margin: -0.24em -0.04em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .ui { font-family: 'UI', Arial, sans-serif; }
+  .pill { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 0.45em; white-space: nowrap; border-radius: 999px;
+          font-family: 'Display', Arial, sans-serif; font-weight: 800; transform-origin: 50% 50%; }
+  .pill svg { width: 1.05em; height: 1.05em; flex: none; }
+  body.notext .line, body.notext [data-notext] { visibility: hidden !important; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="ilustrado.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

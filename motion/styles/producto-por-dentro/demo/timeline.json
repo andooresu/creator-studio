@@ -1,0 +1,46 @@
+{
+  "note": "Demo del estilo Producto por dentro: 13 s = 26 beats a 120 BPM. Todo en beats. Copia a la raíz del proyecto y corre node scripts/sync.mjs.",
+  "title": "Producto por dentro — demo",
+  "duration": 13,
+  "fps": 60,
+  "bpm": 120,
+  "formats": ["9x16", "4x5", "16x9"],
+  "music": {
+    "source": "synth",
+    "chords": ["C", "Am", "F", "G"],
+    "sections": [
+      { "at": "hook", "kind": "full" },
+      { "at": "grid", "kind": "build" },
+      { "at": "end", "kind": "drop" }
+    ]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0, "hook_w2": 1, "hook_w3": 1.5, "art": 0.5, "enter": 5.25,
+    "count": 6, "count_land": 9, "mods": 8, "sel": 11, "open": 11.5,
+    "play": 12, "why": 12.5, "clip2": 14,
+    "grid": 16, "g2": 16.5, "g3": 17, "g4": 17.5, "dl": 19,
+    "end": 20, "cta": 21, "sub": 22, "done": 26
+  },
+  "sfx": [
+    { "at": "hook", "type": "pop", "gain": 0.7, "what": "renglones 1-2 del hook" },
+    { "at": "hook_w3", "type": "pop", "gain": 0.6, "what": "renglón 3 del hook" },
+    { "at": "art", "type": "whoosh", "gain": 0.5, "what": "sube la tarjeta del producto" },
+    { "at": "enter", "type": "click", "gain": 0.7, "what": "el cursor abre el producto" },
+    { "at": "count", "to": "count_land", "every": 0.25, "type": "tick", "gain": 0.3, "what": "contador 0 → 12" },
+    { "at": "count_land", "type": "thump", "gain": 0.8, "what": "aterriza el número" },
+    { "at": "sel", "type": "pop", "gain": 0.5, "what": "anillo de selección" },
+    { "at": "open", "type": "click", "gain": 0.7, "what": "clic en la fila" },
+    { "at": "play", "type": "whoosh", "gain": 0.6, "what": "el reproductor crece de la fila" },
+    { "at": "grid", "type": "pop", "gain": 0.5, "what": "tarjeta 1" },
+    { "at": "g2", "type": "pop", "gain": 0.5, "what": "tarjeta 2" },
+    { "at": "g3", "type": "pop", "gain": 0.5, "what": "tarjeta 3" },
+    { "at": "g4", "type": "pop", "gain": 0.5, "what": "tarjeta 4" },
+    { "at": "dl", "type": "click", "gain": 0.7, "what": "descarga" },
+    { "at": "end", "type": "thump", "gain": 0.9, "what": "golpe del lockup" },
+    { "at": "cta", "type": "pop", "gain": 0.6, "what": "píldora CTA" }
+  ],
+  "mix": { "music": -9, "sfx": -6, "vo": 0, "duck": true },
+  "captions": { "formats": [], "preset": "pill-sobrio", "skip": [] },
+  "lint": { "minText": {}, "ignore": [] }
+}
