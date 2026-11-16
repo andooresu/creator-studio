@@ -14,6 +14,9 @@ export function PublishStage({ p, running, run, goStage }: StageProps) {
   const [url, setUrl] = useState(savedUrl);
   useEffect(() => { setUrl(savedUrl); }, [savedUrl]);
 
+  // el paquete se lanza solo al aprobar la edición; también se puede regenerar a mano
+  const packRunning = running && (p.job?.stage === "publicacion" || p.job?.stage === "publicar");
+
   const copyBtn = (text: string, what: string) => <Button variant="ghost" size="sm" aria-label={`Copiar ${what}`} onClick={() => copy(text, toast)}><Copy aria-hidden />Copiar</Button>;
 
   return (
@@ -22,11 +25,11 @@ export function PublishStage({ p, running, run, goStage }: StageProps) {
         <div className="card"><h2>Paquete de publicación</h2>
           <p className="small muted">Caption, hashtags, portada y estrategia para lanzarlo como <b>Trial Reel</b> (se muestra primero a no seguidores).</p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <Button variant={k ? "secondary" : "default"} disabled={running} onClick={() => { run("publish-pack").catch(() => {}); }}><Sparkles aria-hidden />{k ? "Regenerar paquete" : "Generar paquete"}</Button>
+            <Button variant={k ? "secondary" : "default"} disabled={running} onClick={() => { run("publish-pack").catch(() => {}); }}><Sparkles aria-hidden />{packRunning ? "Preparando…" : k ? "Regenerar paquete" : "Generar paquete"}</Button>
             {!p.edit?.final ? <Button variant="ghost" onClick={() => goStage("edicion")}>Ir a Edición<ArrowRight aria-hidden /></Button> : null}
           </div>
           {!p.edit?.final ? <p className="small muted mt-2">Aún no tienes el video final. Puedes preparar el paquete, pero necesitarás el MP4 para subirlo.</p> : null}
-          {running ? <p className="small muted mt-2" role="status" aria-live="polite">La IA está preparando el paquete…</p> : null}</div>
+          {packRunning ? <div className="mt-2 flex items-center gap-2.5" role="status" aria-live="polite"><div className="spinner" /><p className="small muted m-0">La IA está preparando el paquete (empieza solo al aprobar la edición)…</p></div> : null}</div>
         {k ? (
           <>
             <div className="card"><div className="row"><h3 className="grow">Caption</h3>{copyBtn(k.caption + "\n\n" + k.hashtags.join(" "), "caption y hashtags")}</div><p style={{ whiteSpace: "pre-wrap" }}>{k.caption}</p><p className="muted">{k.hashtags.join(" ")}</p></div>

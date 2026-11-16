@@ -1,4 +1,4 @@
-// 2. Análisis: descomposición de la referencia hecha por la IA y paso a guion.
+// 2. Análisis: descomposición de la referencia hecha por la IA y paso a guion (acción principal arriba).
 // AnalysisView también se reutiliza en Inspiración.
 import { useState } from "react";
 import { ArrowRight, FileText } from "lucide-react";
@@ -76,7 +76,7 @@ export function AnalysisStage({ p, running, run, goStage }: StageProps) {
         <p className="muted">El análisis descompone tus referencias: el hook, la estructura y por qué funcionan. Con eso la IA escribe tu guion.</p>
         <p className="small muted">
           {n
-            ? `Tienes ${n} referencia${n === 1 ? "" : "s"}. En Referencias, pulsa «Analizar con IA».`
+            ? `Tienes ${n} referencia${n === 1 ? "" : "s"}. En Referencias, pulsa «Analizar y escribir guion».`
             : "Primero agrega al menos un link o video de referencia."}
         </p>
         <Button className="mt-3" onClick={() => goStage("referencias")}>Ir a Referencias<ArrowRight aria-hidden /></Button>
@@ -87,19 +87,25 @@ export function AnalysisStage({ p, running, run, goStage }: StageProps) {
   const writeScript = () => { setAsking(false); run("script").catch(() => {}); };
   return (
     <>
-      <AnalysisView a={a} frames={frames} />
+      {/* Acción principal arriba: no hace falta recorrer todo el análisis para pasar al guion. */}
       <div className="card">
         {asking ? (
           <ConfirmInline question="¿Reemplazar el guion actual por uno nuevo?" yes="Sí, reemplazar" onYes={writeScript} onNo={() => setAsking(false)} />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <Button disabled={running} onClick={() => { if (p.script) setAsking(true); else writeScript(); }}>
-              {p.script ? "Regenerar guion" : "Escribir guion"}<ArrowRight aria-hidden />
-            </Button>
-            {p.script ? <Button variant="secondary" asChild><a href={`#/p/${p.id}/guion`}><FileText aria-hidden />Ver guion actual</a></Button> : null}
+            {p.script ? (
+              <>
+                <Button onClick={() => goStage("guion")}><FileText aria-hidden />Ver guion<ArrowRight aria-hidden /></Button>
+                <Button variant="secondary" disabled={running} onClick={() => setAsking(true)}>Regenerar guion</Button>
+              </>
+            ) : (
+              <Button disabled={running} onClick={writeScript}>Escribir guion<ArrowRight aria-hidden /></Button>
+            )}
+            {running ? <span className="small muted" role="status" aria-live="polite">La IA está trabajando…</span> : null}
           </div>
         )}
       </div>
+      <AnalysisView a={a} frames={frames} />
     </>
   );
 }

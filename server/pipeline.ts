@@ -95,15 +95,44 @@ export async function analyze(project: Project, step: Step): Promise<void> {
   content.push({ type: "text", text: `Objetivo del proyecto: ${project.goal || "replicar/adaptar el formato a mi marca"}.\nDescompón la(s) referencia(s): hook, estructura por beats con tiempos, técnicas de retención, edición, por qué se viraliza y cómo adaptarlo a mi marca.` });
   step("La IA está analizando la referencia…");
   project.analysis = await ask({ stage: "analisis", projectId: project.id, system: systemPrompt(project), content, schema: Analysis });
-  project.stage = "guion";
+  // La etapa la decide analyzeAndScript: pasa a "guion" cuando hay guion (o cuando el guion falla tras el análisis).
   log(project, "Análisis listo");
+}
+
+// ---------- 2+3. Análisis y guion en el mismo trabajo ----------
+/** Analiza las referencias y enseguida escribe el guion. Sin referencias (pero con objetivo) escribe el guion directo
+ *  desde el objetivo y la marca. Si el guion falla tras un análisis exitoso, el análisis se conserva, la etapa queda en
+ *  "guion" (la interfaz ofrece "Escribir guion" para reintentar) y el error se reporta en el trabajo. */
+export async function analyzeAndScript(project: Project, step: Step): Promise<void> {
+  if (project.references.length) {
+    step("Analizando referencias…");
+    await analyze(project, step);
+    save();
+    step("Escribiendo el guion…");
+    try {
+      await writeScript(project, step);
+    } catch (e) {
+      project.stage = "guion";
+      throw new Error("El análisis quedó listo, pero el guion falló: " + errMsg(e));
+    }
+  } else {
+    step("Escribiendo el guion desde tu objetivo…");
+    await writeScript(project, step);
+  }
+  project.stage = "guion";
+  log(project, "Guion listo");
 }
 
 // ---------- 3. Guion + recomendaciones de grabación ----------
 export async function writeScript(project: Project, step: Step, feedback = ""): Promise<void> {
   step(feedback ? "La IA está reescribiendo el guion con tu feedback…" : "La IA está escribiendo el guion…");
-  const prev = project.script ? `\nGUION ANTERIOR:\n${JSON.stringify(project.script)}\nFEEDBACK DEL CREADOR (aplícalo al pie de la letra): ${feedback}` : "";
-  const content: ContentBlock[] = [{ type: "text", text: `ANÁLISIS DE LA REFERENCIA:\n${JSON.stringify(project.analysis)}\nObjetivo: ${project.goal || "-"}${prev}\n\nEscribe el guion para mi reel, con mi voz (perfil de marca), palabra por palabra, listo para grabar, más recomendaciones concretas de grabación (plano, luz, audio, energía, tomas y B-roll). Hook en los primeros 2 segundos.` }];
+  // el guion anterior solo se pasa cuando hay feedback; sin feedback se escribe de cero desde el análisis
+  const prev = project.script && feedback.trim() ? `\nGUION ANTERIOR:\n${JSON.stringify(project.script)}\nFEEDBACK DEL CREADOR (aplícalo al pie de la letra): ${feedback}` : "";
+  // Sin análisis (proyecto sin referencias) el guion sale solo del objetivo y la guía de marca.
+  const base = project.analysis
+    ? `ANÁLISIS DE LA REFERENCIA:\n${JSON.stringify(project.analysis)}`
+    : "SIN REFERENCIA: no hay video de referencia. Basa la estructura en el objetivo y en la guía de marca (pilares, voz y hooks).";
+  const content: ContentBlock[] = [{ type: "text", text: `${base}\nObjetivo: ${project.goal || "-"}${prev}\n\nEscribe el guion para mi reel, con mi voz (perfil de marca), palabra por palabra, listo para grabar, más recomendaciones concretas de grabación (plano, luz, audio, energía, tomas y B-roll). Hook en los primeros 2 segundos.` }];
   project.script = await ask({ stage: "guion", projectId: project.id, system: systemPrompt(project), content, schema: Script });
   project.scriptApproved = false;
   project.scriptHistory = [...(project.scriptHistory || []), { at: new Date().toISOString(), feedback }];

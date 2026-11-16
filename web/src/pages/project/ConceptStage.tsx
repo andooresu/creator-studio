@@ -7,8 +7,27 @@ import { useApp } from "../../store.tsx";
 import { Tag } from "../../ui.tsx";
 import type { StageProps } from "./contract.ts";
 
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Acento de una paleta de marca: el color más saturado que no sea casi blanco ni casi negro. */
+function brandAccent(palette: string[]): string | null {
+  let best: string | null = null;
+  let bestScore = -1;
+  for (const h of palette) {
+    if (!HEX.test(h)) continue;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (l < 0.12 || l > 0.92) continue;
+    const sat = max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1));
+    if (sat > bestScore) { bestScore = sat; best = h; }
+  }
+  return best && bestScore >= 0.25 ? best : null;
+}
+
 export function ConceptStage({ p, running, run, goStage }: StageProps) {
-  const { toast } = useApp();
+  const { state, toast } = useApp();
   const [fb, setFb] = useState("");
   const c = p.concept;
 
@@ -32,7 +51,9 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
     );
   }
 
-  const acc = /^#[0-9a-f]{6}$/i.test(c.subtitulos.colorAcento) ? c.subtitulos.colorAcento : "#FFD400";
+  // Acento: el del concepto; si no es válido, el de la marca del proyecto; amarillo solo cuando no hay marca.
+  const brand = state?.brandIsPlaceholder ? null : (state?.brands || []).find((b) => b.id === (p.brandId || state?.defaultBrandId)) || null;
+  const acc = HEX.test(c.subtitulos.colorAcento) ? c.subtitulos.colorAcento : (brand && brandAccent(brand.palette)) || "#FFD400";
 
   const revise = async () => {
     const text = fb.trim();

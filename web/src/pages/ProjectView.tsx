@@ -1,8 +1,11 @@
 // Vista de proyecto: cabecera (título editable, tipo, fecha, guía de marca y menú «Más»), un stepper para todo
-// proyecto, banner del trabajo en segundo plano y la etapa que se está viendo. Sondea el proyecto cada 2 s.
+// proyecto, banner del trabajo en segundo plano y la etapa que se está viendo (vive en la URL: #/p/<id>/<etapa>).
+// Sondea el proyecto cada 2 s. Al lanzar un trabajo la vista va a la etapa que muestra su progreso; al terminar,
+// solo se mueve si sigues en esa etapa (si no, aviso con «Ver»).
 // Los proyectos del motor de video ("reel" y "clase") muestran un stepper de solo lectura y la sesión de producción.
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { DropdownMenu } from "radix-ui";
+import { toast as sonner } from "sonner";
 import { FolderOpen, MoreHorizontal, Trash2 } from "lucide-react";
 import type { Project, ProjectKind, Stage } from "../../../shared/types.ts";
 import { api } from "../api.ts";
@@ -75,6 +78,12 @@ function motionStep(p: Project): number {
 function stepIndex(s: string): number { const i = STEPS.indexOf(s as Stage); return i === -1 ? STEPS.length : i; }
 /** Etapa a mostrar por defecto: la real del proyecto ("publicado" se ve en Publicación). */
 const defaultView = (s: Stage): string => (s === "publicado" ? "publicacion" : s);
+/** Etapa que muestra el progreso de un trabajo según su tipo ("tomas" se ve en Edición). */
+function jobView(jobStage: string): string {
+  if (jobStage === "tomas") return "edicion";
+  if (jobStage === "publicar") return "publicacion";
+  return STAGE_VIEWS[jobStage] ? jobStage : "";
+}
 
 /** Llama fn con el valor cuando el control dispara el evento nativo "change" (al confirmar, no en cada tecla). */
 function useNativeChange<T extends HTMLInputElement | HTMLTextAreaElement>(fn: (value: string) => void) {
@@ -183,36 +192,78 @@ function ProjectHeader({ p, setProject }: { p: Project; setProject: (p: Project)
 }
 
 export function ProjectView({ id, sub }: { id: string; sub?: string }) {
-  const { refresh, toast, act } = useApp();
+  const { refresh, toast, act, navigate } = useApp();
   const [p, setP] = useState<Project | null>(null);
-  const [viewing, setViewing] = useState<string>("");
   // Copia siempre fresca del proyecto (el sondeo la actualiza aunque no haya que volver a pintar).
   const pRef = useRef<Project | null>(null);
+  // Etapa en la que se lanzó el trabajo en curso (la que muestra su progreso). Al terminar, solo se mueve la vista
+  // si sigues ahí; si te fuiste a otra etapa, sale un aviso con «Ver».
+  const originRef = useRef<{ startedAt?: string; view: string } | null>(null);
 
   const setProject = useCallback((x: Project) => { pRef.current = x; setP(x); }, []);
 
-  // Carga al entrar y cada vez que cambia la etapa en la URL (#/p/<id>/<etapa>).
+  // La etapa que se ve vive en la URL (#/p/<id>/<etapa>): Atrás/Adelante y recargar la respetan.
+  // Sin etapa en la URL se ve la etapa real del proyecto.
+  const viewing = p ? (sub && STAGE_VIEWS[sub] ? sub : defaultView(p.stage)) : "";
+  const viewingRef = useRef(viewing);
+  viewingRef.current = viewing;
+  const subRef = useRef(sub);
+  subRef.current = sub;
+
+  /** Cambia la etapa que se ve navegando el hash (pasa por el guardia de cambios sin guardar). */
+  const goView = useCallback((s: string) => {
+    if (s === viewingRef.current && subRef.current) return;
+    navigate(`#/p/${id}/${s}`);
+  }, [id, navigate]);
+
+  // Carga al entrar al proyecto (cambiar de etapa no vuelve a cargar: solo cambia la URL).
   useEffect(() => {
     let alive = true;
     api<Project>(`/api/projects/${id}`).catch(() => null).then((x) => {
       if (!alive) return;
       if (!x) { location.hash = "#/"; return; }
       setProject(x);
-      setViewing(sub || defaultView(x.stage));
     });
     return () => { alive = false; };
-  }, [id, sub, setProject]);
+  }, [id, setProject]);
+
+  /** Si la respuesta de una acción trae un trabajo recién lanzado, lleva la vista a la etapa que muestra su progreso. */
+  const followJobStart = useCallback((prev: Project | null, np: Project) => {
+    const j = np.job;
+    if (j?.status !== "running") return;
+    if (prev?.job?.status === "running" && prev.job.startedAt === j.startedAt) return;
+    const view = jobView(j.stage);
+    originRef.current = { startedAt: j.startedAt, view: view || viewingRef.current };
+    if (view) goView(view);
+  }, [goView]);
 
   usePoll(async () => {
     if (!pRef.current) return;
-    const np = await api<Project>(`/api/projects/${pRef.current.id}`).catch(() => null);
+    const prev = pRef.current;
+    const np = await api<Project>(`/api/projects/${prev.id}`).catch(() => null);
     if (!np || !pRef.current) return;
     const wasRunning = pRef.current.job?.status === "running";
+    const prevJob = pRef.current.job;
     const changed = JSON.stringify(np.job) !== JSON.stringify(pRef.current.job);
     pRef.current = np;
     if (changed) {
-      if (wasRunning && np.job?.status === "done") { setViewing(defaultView(np.stage)); toast("Listo ✓"); refresh().catch(() => {}); }
-      if (wasRunning && np.job?.status === "error") refresh().catch(() => {});
+      if (wasRunning && np.job?.status === "done") {
+        const origin = originRef.current;
+        originRef.current = null;
+        const cur = viewingRef.current;
+        const startedView = origin?.view ?? (jobView(prevJob?.stage || "") || cur);
+        const dest = defaultView(np.stage);
+        if (cur === dest) toast("Listo ✓");
+        else if (cur === startedView) { navigate(`#/p/${np.id}/${dest}`); toast("Listo ✓"); }
+        else {
+          // te quedas donde estás (fija la etapa en la URL para que la vista no siga a la etapa real)
+          if (!subRef.current) navigate(`#/p/${np.id}/${cur}`);
+          const what = STAGE_LABEL[dest as Stage] || dest;
+          sonner.success(`Listo: ${what}`, { action: { label: "Ver", onClick: () => navigate(`#/p/${np.id}/${dest}`) }, duration: 8000 });
+        }
+        refresh().catch(() => {});
+      }
+      if (wasRunning && np.job?.status === "error") { originRef.current = null; refresh().catch(() => {}); }
       setP(np);
     }
   }, 2000, p !== null && !isMotion(p), id ? [`projects:${id}`, `step:projects:${id}`] : undefined);
@@ -222,10 +273,18 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
     if (!cur) return;
     const np = await act(() => api<Project>(`/api/projects/${cur.id}/${path}`, { method: "POST", body: body || {} }), okMsg);
     setProject(np);
+    followJobStart(cur, np);
     refresh().catch(() => {});
-  }, [act, refresh, setProject]);
+  }, [act, refresh, setProject, followJobStart]);
 
-  const goStage = useCallback((s: Stage) => setViewing(s), []);
+  // Las etapas que reemplazan el proyecto (p. ej. al subir la grabación) también siguen al trabajo que el servidor lance.
+  const setProjectFromStage = useCallback((x: Project) => {
+    const prev = pRef.current;
+    setProject(x);
+    followJobStart(prev, x);
+  }, [setProject, followJobStart]);
+
+  const goStage = useCallback((s: Stage) => goView(defaultView(s)), [goView]);
 
   if (!p) return null;
   if (isMotion(p)) {
@@ -238,6 +297,9 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
     );
   }
   const cur = stepIndex(p.stage);
+  // Hecho = etapa anterior a la real y con su resultado (Análisis sin análisis o Guion sin guion no se marcan).
+  const isDone = (s: StepItem, i: number): boolean =>
+    i < cur && (s.id !== "analisis" || !!p.analysis) && (s.id !== "guion" || !!p.script);
   const job = p.job;
   const running = job?.status === "running";
   const View = STAGE_VIEWS[viewing] || RefsStage;
@@ -245,10 +307,10 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
   return (
     <>
       <ProjectHeader key={p.id + "\u0000" + p.title} p={p} setProject={setProject} />
-      <Stepper steps={TALK_STEPS} current={cur} viewing={viewing} onSelect={setViewing} />
+      <Stepper steps={TALK_STEPS} current={cur} viewing={viewing} onSelect={goView} isDone={isDone} />
       <JobBanner job={job} label={job ? STAGE_LABEL[job.stage as Stage] || job.stage : undefined} onClose={() => setProject({ ...p, job: null })} />
       <div id="stage">
-        <View p={p} running={running} run={run} setProject={setProject} goStage={goStage} />
+        <View p={p} running={running} run={run} setProject={setProjectFromStage} goStage={goStage} />
       </div>
     </>
   );

@@ -37,7 +37,7 @@ productionRouter.post("/api/projects/:id/production/start", wrap((req, res) => {
     if (next && !getStyle(next)) throw new Error("Ese estilo ya no existe.");
     if ((p.styleId || null) !== next) { p.styleId = next; restyle = true; }
   }
-  try { startProduction(p, { mode, brief, changeMode, restyle }); }
+  try { startProduction(p, { mode, brief, changeMode, restyle, flags: req.body?.flags }); } // flags: opciones de inicio (las valida el runner)
   catch (e) { if (restyle) p.styleId = prevStyle; throw e; } // si no arrancó, el cambio de estilo no queda a medias
   res.json(p);
 }));

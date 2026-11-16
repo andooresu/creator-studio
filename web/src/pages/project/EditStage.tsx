@@ -3,12 +3,18 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Check, Clapperboard, Download, FolderOpen, RotateCcw, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
 import { VideoPlayer } from "@/components/VideoPlayer.tsx";
-import type { Project, Tools } from "../../../../shared/types.ts";
+import { cn } from "@/lib/utils.ts";
+import { FORMATS } from "../../../../shared/types.ts";
+import type { Format, Project, Tools } from "../../../../shared/types.ts";
 import { api } from "../../api.ts";
 import { useApp } from "../../store.tsx";
 import { copy, fmtT, Tag } from "../../ui.tsx";
 import type { StageProps } from "./contract.ts";
 import { ProductionPanel } from "./Production.tsx";
+
+const FMT_LABEL: Record<Format, string> = { "9x16": "9:16", "4x5": "4:5", "1x1": "1:1", "16x9": "16:9" };
+const CHECK = { width: 16, height: 16, padding: 0, margin: 0, accentColor: "var(--blue)", flex: "none" } as const;
+const CHECK_LABEL = "m-0! inline-flex! cursor-pointer items-center gap-2 text-[13px]! font-normal! text-foreground!";
 
 export function EditStage({ p, running, run, setProject, goStage }: StageProps) {
   const { state, toast, act } = useApp();
@@ -82,6 +88,27 @@ export function EditStage({ p, running, run, setProject, goStage }: StageProps) 
   const chosenStyle = styleId || talkStyles[0]?.id || "";
   const prodBusy = p.production?.status === "running" || p.production?.status === "waiting";
   const motionReady = state?.motion?.ready ?? false;
+  // Opciones de inicio: van al productor como respuestas ya dadas (no las vuelve a preguntar).
+  // misma resolución que el servidor (getBrand): la del proyecto, si no la predeterminada, si no la primera
+  const brands = state?.brands || [];
+  const brand = brands.find((b) => b.id === p.brandId) || brands.find((b) => b.id === state?.defaultBrandId) || brands[0] || null;
+  const hasBrand = !!brand && !state?.brandIsPlaceholder;
+  // si ya hubo una producción, se parte de las opciones que el usuario eligió entonces
+  const saved = (p.production as { flags?: { useBrand?: boolean; music?: boolean; formats?: Format[] } } | null | undefined)?.flags;
+  const [useBrand, setUseBrand] = useState(saved?.useBrand ?? hasBrand);
+  useEffect(() => { setUseBrand(saved?.useBrand ?? hasBrand); }, [hasBrand, saved?.useBrand]);
+  const [music, setMusic] = useState(saved?.music ?? true);
+  const [formats, setFormats] = useState<Format[]>(saved?.formats?.length ? saved.formats : ["9x16"]);
+  useEffect(() => {
+    if (saved?.music !== undefined) setMusic(saved.music);
+    if (saved?.formats?.length) setFormats(saved.formats);
+  }, [saved?.music, saved?.formats?.join(",")]);
+  const toggleFmt = (f: Format, on: boolean) => {
+    setFormats((prev) => {
+      const next = on ? [...prev, f] : prev.filter((x) => x !== f);
+      return next.length ? FORMATS.filter((x) => next.includes(x)) : prev; // al menos un formato
+    });
+  };
   const onStyledRender = async () => {
     if (!chosenStyle) { toast("Elige un estilo", true); return; }
     const styleName = talkStyles.find((x) => x.id === chosenStyle)?.name || "el estilo elegido";
@@ -95,7 +122,7 @@ export function EditStage({ p, running, run, setProject, goStage }: StageProps) 
       const okMsg = restyle
         ? `Estilo cambiado a «${styleName}»: el productor rehará el diseño con la nueva guía ✓`
         : p.production ? "Producción reanudada ✓" : "Producción iniciada ✓";
-      await run("production/start", { mode: "talking", styleId: chosenStyle }, okMsg);
+      await run("production/start", { mode: "talking", styleId: chosenStyle, flags: { ...(hasBrand ? { useBrand } : {}), music, formats } }, okMsg);
     } catch { /* el error ya se mostró como notificación */ }
   };
 
@@ -159,6 +186,26 @@ export function EditStage({ p, running, run, setProject, goStage }: StageProps) 
               {(() => { const d = talkStyles.find((x) => x.id === chosenStyle)?.description; return d ? <p className="small muted" style={{ marginTop: 4 }}>{d}</p> : null; })()}
             </>
           ) : <p className="small muted">No hay estilos para videos a cámara. <a href="#/estilos">Crea uno en Estilos</a>.</p>}
+          <fieldset className="mt-3 flex flex-col gap-2 border-0 p-0" disabled={prodBusy}>
+            <legend className="sr-only">Opciones de la producción</legend>
+            <label className={cn(CHECK_LABEL, !hasBrand && "cursor-not-allowed text-muted-foreground!")}>
+              <input type="checkbox" checked={hasBrand && useBrand} disabled={!hasBrand} onChange={(ev) => setUseBrand(ev.target.checked)} style={CHECK} />
+              {hasBrand ? <>Usar mi marca <span className="muted">({brand?.name})</span></> : <>Usar mi marca <span className="muted">(aún no tienes una guía)</span></>}
+            </label>
+            <label className={CHECK_LABEL}>
+              <input type="checkbox" checked={music} onChange={(ev) => setMusic(ev.target.checked)} style={CHECK} />
+              Música de fondo
+            </label>
+            <div role="group" aria-label="Formatos" className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="small muted">Formatos:</span>
+              {FORMATS.map((f) => (
+                <label key={f} className={CHECK_LABEL}>
+                  <input type="checkbox" checked={formats.includes(f)} onChange={(ev) => toggleFmt(f, ev.target.checked)} style={CHECK} />
+                  {FMT_LABEL[f]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <Button variant="secondary" className="max-w-full whitespace-normal" disabled={running || prodBusy || !chosenStyle || !p.recording} onClick={() => void onStyledRender()}>
               {p.production ? <><RotateCcw aria-hidden />Producir de nuevo con este estilo</> : <><Clapperboard aria-hidden />Producir con estilo</>}

@@ -3,14 +3,62 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { load, getBrand, projectDir, MOTION_DIR, PROJECTS_DIR } from "../db.ts";
+import { load, getBrand, projectDir, MOTION_DIR, PROJECTS_DIR, DEFAULT_BRAND } from "../db.ts";
 import { brandToPrompt } from "../brand.ts";
-import type { AudioProvider, Project, Settings, Style } from "../../shared/types.ts";
+import { FORMATS } from "../../shared/types.ts";
+import type { AudioProvider, Brand, Format, Project, Settings, Style } from "../../shared/types.ts";
 
 /** temporal propio del agente (TMPDIR de sus procesos y único temporal que el sandbox deja escribir) */
 export const AGENT_TMP = path.join(os.tmpdir(), "creator-studio-agent");
 
 export type ProductionMode = "reel" | "clase" | "talking";
+
+/** Opciones que el usuario ya eligió en la tarjeta de inicio (EditStage): entran al arranque como respuestas dadas. */
+export interface StartFlags {
+  /** usar la guía de marca del proyecto (false: ignorarla y usar el estilo tal cual) */
+  useBrand?: boolean;
+  /** música de fondo (false: sin música) */
+  music?: boolean;
+  /** formatos de entrega elegidos */
+  formats?: Format[];
+}
+
+/** Valida las opciones de inicio que llegan del cliente (cualquier cosa rara se descarta). */
+export function parseStartFlags(raw: unknown): StartFlags | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: StartFlags = {};
+  if (typeof r.useBrand === "boolean") out.useBrand = r.useBrand;
+  if (typeof r.music === "boolean") out.music = r.music;
+  if (Array.isArray(r.formats)) {
+    const f = [...new Set(r.formats.filter((x): x is Format => typeof x === "string" && (FORMATS as string[]).includes(x)))];
+    if (f.length) out.formats = f;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Opciones de inicio guardadas en la producción (las deja el runner al arrancar). */
+export function flagsOf(p: Project): StartFlags | undefined {
+  return (p.production as { flags?: StartFlags } | null | undefined)?.flags;
+}
+
+/** true si la guía de marca es real (no el marcador inicial vacío). */
+function realBrand(b: Brand | null | undefined): boolean {
+  return Boolean(b && (b.guide || (b.raw?.trim() && b.raw !== DEFAULT_BRAND)));
+}
+
+/** Marca que aplica al proyecto: null si no hay guía real o si el usuario apagó «Usar mi marca». */
+export function activeBrand(p: Project, flags?: StartFlags): Brand | null {
+  if (flags?.useBrand === false) return null;
+  try { const b = getBrand(p.brandId); return realBrand(b) ? b : null; } catch { return null; }
+}
+
+/** El proyecto ya trae guion o concepto aprobados (no hace falta entrevistar para entenderlo). */
+function hasApprovedBase(p: Project): boolean {
+  return Boolean((p.scriptApproved && p.script) || (p.conceptApproved && p.concept));
+}
+
+const FMT_LABEL: Record<Format, string> = { "9x16": "9:16", "4x5": "4:5", "1x1": "1:1", "16x9": "16:9" };
 
 const SKILL = path.join(MOTION_DIR, "skill", "SKILL.md");
 const REF = path.join(MOTION_DIR, "skill", "reference");
@@ -57,7 +105,7 @@ function previousMusic(pid: string): string[] {
   } catch { return []; }
 }
 
-function projectData(p: Project, mode: ProductionMode): string {
+function projectData(p: Project, mode: ProductionMode, flags?: StartFlags): string {
   const pdir = projectDir(p.id);
   const out: string[] = [];
   out.push(`- Título: ${p.title}`);
@@ -79,7 +127,9 @@ function projectData(p: Project, mode: ProductionMode): string {
   }
   if (p.concept) {
     const c = p.concept;
-    out.push(`- Concepto de edición${p.conceptApproved ? " (APROBADO)" : ""}: ${cut(c.resumen, 400)}\n  Estilo: ${cut(c.estiloGeneral, 240)} · Hook visual: ${cut(c.hookVisual, 200)} · Ritmo: ${cut(c.ritmo, 160)}\n  Subtítulos: ${c.subtitulos.fuente}, ${c.subtitulos.estilo}, acento ${c.subtitulos.colorAcento}, ${c.subtitulos.posicion}, ${c.subtitulos.animacion}\n  Paleta: ${c.paleta.join(", ")} · Música: ${c.musica.estilo} ${c.musica.bpm} (${cut(c.musica.notas, 120)})\n  Momentos:\n${c.momentos.map((m) => `   - ${m.tiempo} [${m.tipo}] ${cut(m.descripcion, 160)}`).join("\n")}`);
+    // con la marca apagada, los colores del concepto (que salen de la marca) no cuentan
+    const brandOff = flags?.useBrand === false;
+    out.push(`- Concepto de edición${p.conceptApproved ? " (APROBADO)" : ""}: ${cut(c.resumen, 400)}\n  Estilo: ${cut(c.estiloGeneral, 240)} · Hook visual: ${cut(c.hookVisual, 200)} · Ritmo: ${cut(c.ritmo, 160)}\n  Subtítulos: ${c.subtitulos.fuente}, ${c.subtitulos.estilo}, ${brandOff ? "colores del estilo" : `acento ${c.subtitulos.colorAcento}`}, ${c.subtitulos.posicion}, ${c.subtitulos.animacion}\n  Paleta: ${brandOff ? "(la del concepto venía de la marca y el usuario la apagó en este video: usa la del estilo)" : c.paleta.join(", ")} · Música: ${c.musica.estilo} ${c.musica.bpm} (${cut(c.musica.notas, 120)})\n  Momentos:\n${c.momentos.map((m) => `   - ${m.tiempo} [${m.tipo}] ${cut(m.descripcion, 160)}`).join("\n")}`);
   }
   if (mode === "talking" || p.recording) {
     const rec = p.recording;
@@ -101,14 +151,21 @@ function projectData(p: Project, mode: ProductionMode): string {
   return out.join("\n");
 }
 
-function modeGuide(mode: ProductionMode): string {
+function modeGuide(mode: ProductionMode, flags?: StartFlags): string {
   if (mode === "reel") return `## Modo: REEL COMERCIAL
 Reel publicitario / de lanzamiento: concepto con STRATEGY.md, música original por proyecto, SFX en los golpes, VO opcional, material real (capturas, fotos, clips importados con scripts/seq.py) sobre el sistema de movimiento del estilo. Hook legible en el fotograma 0, algo nuevo cada 2–4 s, end card ≤ 2 s con CTA.`;
   if (mode === "clase") return `## Modo: CLASE / EXPLICADOR
 Video explicativo por secciones (hook → problema → 2–4 ideas → resumen/CTA). La voz (VO) manda: escribe el guion por secciones, genera la locución, alinea palabras con scripts/words.py y ancla cada aparición (título, diagrama, lista, número, resaltado) a la palabra exacta que la dice (C.beatAt(p.t0) con VO[i].words). Ritmo de lectura cómodo, una idea por pantalla, subtítulos según el estilo. Música de fondo discreta con ducking bajo la voz.`;
   return `## Modo: TALKING HEAD (grabación del creador)
 La base es el video del creador hablando a cámara: CONSERVA SU VOZ (no generes VO ni reemplaces el audio de la voz). Usa el corte de la edición automática si existe (o el plan de tomas sobre la grabación original) e impórtalo como secuencia con \`.venv/bin/python scripts/seq.py <nombre> <video> <inicio_s> <dur_s>\` (elige ventanas con \`seq.py --strip\`); dibújalo con C.seq / C.drawSeq. El audio de la voz sale del mismo video (extráelo con ffmpeg a audio/voice.wav, 48 kHz) y entra en la mezcla como pista principal; la música va debajo con ducking.
-Subtítulos desde los tiempos por palabra (words.json de la grabación, re-temporizados al corte si recortas) con el preset de subtítulos del estilo. Encima: punch-ins/zooms en las frases fuertes, gráficos y textos según el concepto aprobado y el estilo, B-roll solo si el usuario lo aporta. Nunca tapes la cara con texto; respeta las zonas seguras de 9:16.`;
+Subtítulos desde los tiempos por palabra (words.json de la grabación, re-temporizados al corte si recortas) con el preset de subtítulos del estilo. Encima: punch-ins/zooms en las frases fuertes, gráficos y textos según el concepto aprobado y el estilo, B-roll solo si el usuario lo aporta. Nunca tapes la cara con texto; respeta las zonas seguras de 9:16.
+### Música en este modo (manda sobre AUDIO.md y sobre "Audio del motor")
+${flags?.music === false
+    ? "- El usuario APAGÓ la música de fondo: no generes música ni la propongas. La mezcla es la voz (más SFX sutiles si el estilo los usa). Solo agrega música si él la pide después en el chat."
+    : `- La música es opcional y va debajo de la voz (−18 a −22 dB con ducking). Genera como máximo 2 variantes (audio_music variants ≤ 2).
+- Para que el usuario elija, publica SIEMPRE la MÚSICA SOLA (el archivo crudo de cada variante) y, si ayuda, una muestra de 15 s mezclada bajo su voz al nivel final (audio_music con preview_voice, p. ej. audio/voice.wav). Nunca publiques solo mezclas donde domina la voz: suenan igual que el audio original y no dejan juzgar la música.
+- En el resumen de request_approval (kind musica) di qué es cada archivo: "Variante A — música sola", "Variante A — muestra 15 s bajo tu voz (nivel final)", etc., con el carácter de cada variante en una línea.
+- Máximo 2 rondas de música sin un comentario explícito del usuario: si no aprueba ni dice qué cambiar, pregúntale qué no le gusta antes de generar otra.`}`;
 }
 
 /** Guía del modo de audio elegido en Ajustes (settings.audioProvider): cómo producir voz, música y efectos. */
@@ -149,7 +206,11 @@ export function buildSystemPrompt(p: Project, mode: ProductionMode, dir: string)
   const settings = load().settings;
   const style = findStyle(p.styleId);
   const styleFile = path.join(dir, "docs", "style", "STYLE.md");
-  const brand = brandToPrompt(getBrand(p.brandId));
+  const flags = flagsOf(p);
+  const brandObj = activeBrand(p, flags);
+  const brand = brandToPrompt(brandObj);
+  const tpl = brandObj ? " (de plantilla: se reemplaza por la marca)" : "";
+  const tplFonts = brandObj ? " (de plantilla: se reemplazan por las de la marca)" : "";
   const prev = previousMusic(p.id);
   const refs = fs.existsSync(REF) ? fs.readdirSync(REF).filter((f) => f.endsWith(".md")).map((f) => path.join(REF, f)) : [];
 
@@ -157,7 +218,7 @@ export function buildSystemPrompt(p: Project, mode: ProductionMode, dir: string)
 Eres el productor de video de ${settings.studioName || "Andoo"}: produces el video completo con el motor motion-reel (película determinista seek(t) renderizada en Chromium + ffmpeg), exactamente como en una sesión de Claude Code con el skill motion-reel, pero dentro de Andoo. El usuario es el director creativo: te habla en español (latino neutro) y tú le respondes en español, claro y breve.
 
 # Método (obligatorio)
-Antes de actuar, LEE ${SKILL} y los archivos de referencia que indica (${refs.map((r) => path.basename(r)).join(", ")} en ${REF}). Lee cada referencia cuando llegues a su fase. Sigue el método al pie de la letra:
+Antes de actuar, LEE ${SKILL} y los archivos de referencia que indica (${refs.map((r) => path.basename(r)).join(", ")} en ${REF}). Lee cada referencia cuando llegues a su fase. Sigue el método al pie de la letra, con las excepciones de "Arranque y preguntas" y "Prioridades" de abajo (mandan sobre INTERVIEW.md y sobre esta regla):
 entrevista → brief.md (sin "?" y con sección Reglas) → recursos (assets) → guía de estilo (docs/style_guide.md) → grilla de beats y música → shotlist y APROBACIÓN → voz (si aplica) → film/film.js → lint → rondas de crítica (≥ 2, todas las notas ≥ 8) → mezcla → renders finales.
 - Para la crítica usa el subagente "critico" (herramienta Task/Agent) con reference/CRITIQUE.md, la ruta del proyecto y el número de ronda; mantén el mismo crítico entre rondas si puedes. Si no hay subagentes disponibles, critica tú mismo mirando las hojas y tiras renderizadas (Read sobre las imágenes), con voz de crítico: evidencia primero.
 - Nunca muestres al usuario una película antes de que la crítica diga SHIP, salvo que él pida ver un avance.
@@ -165,7 +226,7 @@ entrevista → brief.md (sin "?" y con sección Reglas) → recursos (assets) �
 # Adaptadores: herramientas de la app en lugar de las de la sesión
 | En el skill / sesión de Claude Code | Aquí usa |
 |---|---|
-| AskUserQuestion | mcp__studio__ask_user (mismas reglas: ≤ 4 preguntas por ronda, opciones concretas, la recomendada primero) |
+| AskUserQuestion | mcp__studio__ask_user (≤ 3 preguntas por ronda, opciones concretas, la recomendada primero; cuántas rondas: ver "Arranque y preguntas") |
 | ElevenLabs MCP creative_generate_in_flow (node_type music) / scripts/music.py | mcp__studio__audio_music (según el modo de audio de abajo) |
 | ElevenLabs creative_generate_speech | mcp__studio__audio_tts |
 | ElevenLabs node_type sfx | mcp__studio__audio_sfx |
@@ -206,24 +267,83 @@ ${audioGuide(settings)}
 
 # Estilo elegido
 ${style ? `"${style.name}" (${style.kind}, origen ${style.origin}). ${cut(style.description, 400)}
-Guía completa y archivos del estilo: ${fs.existsSync(styleFile) ? styleFile : "docs/style/STYLE.md"} y la carpeta docs/style/. LÉELA antes de la guía de estilo del proyecto: su vocabulario de movimiento, ritmo, tipografía, color, sonido y subtítulos son la base; docs/style_guide.md la concreta para este video.${style.captionPreset ? ` Preset de subtítulos: ${style.captionPreset}.` : ""}${style.tokens.palette.length ? ` Paleta del estilo: ${style.tokens.palette.join(", ")}.` : ""}${style.tokens.fonts.length ? ` Tipografías: ${style.tokens.fonts.join(", ")}.` : ""}` : "Ninguno elegido: define el estilo con el usuario en la entrevista (ronda 3) y escríbelo en docs/style_guide.md. Si existe docs/style/STYLE.md, úsalo."}
+Guía completa y archivos del estilo: ${fs.existsSync(styleFile) ? styleFile : "docs/style/STYLE.md"} y la carpeta docs/style/. LÉELA antes de la guía de estilo del proyecto: su vocabulario de movimiento, ritmo, tipografía, color, sonido y subtítulos son la base; docs/style_guide.md la concreta para este video.${style.captionPreset ? ` Preset de subtítulos: ${style.captionPreset}.` : ""}${style.tokens.palette.length ? ` Paleta del estilo${tpl}: ${style.tokens.palette.join(", ")}.` : ""}${style.tokens.fonts.length ? ` Tipografías del estilo${tplFonts}: ${style.tokens.fonts.join(", ")}.` : ""}` : "Ninguno elegido: define el estilo con el usuario en la entrevista (ronda 3) y escríbelo en docs/style_guide.md. Si existe docs/style/STYLE.md, úsalo."}
 
 # Guía de marca
-${brand || "(sin guía de marca: pregunta lo esencial en la entrevista)"}
-La guía de marca manda en voz, colores y tipografías cuando el estilo no los fije; nunca contradigas sus "No hacer".
+${brand || (flags?.useBrand === false ? "(el usuario eligió NO usar su marca en este video: usa los colores y tipografías del estilo tal cual)" : "(sin guía de marca: usa los colores y tipografías del estilo tal cual; si falta algo esencial como el CTA, pregúntalo según \"Arranque y preguntas\")")}
+
+# Prioridades (decide tú; no las preguntes)
+Si el usuario apagó «Usar mi marca» en este video, ningún color ni tipografía de la marca cuenta, aunque aparezca en el concepto aprobado: usa los del estilo.
+Cuando dos fuentes no coincidan, manda la de arriba y sigue sin preguntar:
+1. Lo que el usuario dijo en el brief o en el chat.
+2. Guion y concepto aprobados.
+3. Guía de marca: paleta por rol, tipografías, voz, CTA y "No hacer" (nunca contradigas sus "No hacer").
+4. Estilo: movimiento, ritmo y layout. Sus colores y tipografías son marcadores de plantilla: ${brandObj ? "reemplázalos por los de la marca conservando los roles (fondo, texto, acento, contorno, tintes)" : "sin marca, úsalos tal cual"}.
+5. Valores por defecto de la casa (skill y guía del estilo).
+Si el acento de la marca no contrasta sobre el video, ajústalo tú (tinte más claro u oscuro, contorno o caja detrás del texto) y anótalo en el resumen final; nunca lo preguntes.
+
+${interviewGuide(p, mode, Boolean(brandObj))}
+
+# Costo y tokens
+- No regeneres assets (música, voz, capturas, renders) sin un motivo concreto: un comentario del usuario o un fallo medido.
+- Si una herramienta falla, haz como máximo 2 reintentos con un cambio real entre intentos; después, dile al usuario qué falló y sigue con lo que tengas.
+- Prefiere terminar con un resultado correcto y una lista corta de mejoras posibles antes que rondas abiertas de pulido. Si tras 3 rondas de crítica no llegas a todas las notas ≥ 8, entrega el mejor borrador y lista lo pendiente.
 
 # Datos del proyecto
-${projectData(p, mode)}
+${projectData(p, mode, flags)}
 
-${modeGuide(mode)}`;
+${modeGuide(mode, flags)}`;
+}
+
+/** Cuánto preguntar al arrancar, según el modo y lo que ya trae el proyecto. Manda sobre INTERVIEW.md. */
+function interviewGuide(p: Project, mode: ProductionMode, brand: boolean): string {
+  if (mode === "talking" || hasApprovedBase(p)) {
+    const have = [
+      mode === "talking" ? "la grabación del creador" : "",
+      p.scriptApproved && p.script ? "guion aprobado" : "",
+      p.conceptApproved && p.concept ? "concepto aprobado" : "",
+      brand ? "guía de marca" : "",
+    ].filter(Boolean);
+    const talk = mode === "talking"
+      ? `\n- No preguntes (modo talking): la persona de la VO (la voz es la del creador), el material o B-roll (usa lo que haya), investigar el sitio, prueba social, familias de concepto${brand ? ", colores ni tipografías (los da la marca)" : ""}, ni nada que ya venga en "Ya respondido" del arranque.`
+      : `\n- No preguntes lo que ya responden el guion, el concepto${brand ? " o la marca (colores, tipografías, voz)" : ""}, ni nada que ya venga en "Ya respondido" del arranque.`;
+    return `# Arranque y preguntas (manda sobre INTERVIEW.md y sobre "al pie de la letra")
+Este proyecto ya trae lo necesario (${have.join(", ")}): NO hagas la entrevista creativa.
+- Escribe brief.md con los datos del proyecto y de la marca, y marca la fuente de cada campo: (usuario), (guion), (concepto), (marca), (estilo) o (por defecto).
+- Solo preguntas que bloquean: como máximo UNA ronda de ask_user con ≤ 3 preguntas, y solo si falta el CTA (no está en brief, guion, concepto ni marca), si aparecen otras personas a cámara (confirma que dieron su consentimiento) o si hay un conflicto real entre lo que pidió el usuario y la marca. Si nada de eso aplica, no preguntes: sigue.${talk}
+- No pidas aprobación del brief por separado: va resumido en la misma aprobación del shotlist.`;
+  }
+  return `# Arranque y preguntas (manda sobre INTERVIEW.md)
+- Entrevista corta: como máximo 2 rondas de ask_user con ≤ 3 preguntas cada una (no las 4 × 4 de INTERVIEW.md).
+- Antes de preguntar algo, revisa los datos del proyecto, la marca${brand ? "" : " (si hay)"} y lo que ya venga en "Ya respondido" del arranque: si ya lo responden, no lo preguntes y anótalo en brief.md con su fuente (usuario, guion, concepto, marca, estilo, por defecto).${brand ? "\n- Con marca: no preguntes colores, tipografías ni voz; salen de la guía de marca." : ""}`;
 }
 
 /** Primer mensaje de la sesión. */
-export function buildKickoff(p: Project, mode: ProductionMode, brief?: string): string {
+export function buildKickoff(p: Project, mode: ProductionMode, brief?: string, flags?: StartFlags): string {
   const what = mode === "reel" ? "un reel comercial" : mode === "clase" ? "una clase / video explicativo" : "el video con estilo a partir de mi grabación (talking head)";
-  return `Vamos a producir ${what} para el proyecto "${p.title}".${brief?.trim() ? `\n\nMi idea / brief inicial:\n${brief.trim()}` : ""}
+  const f = flags ?? flagsOf(p);
+  const answered = flagsText(p, f);
+  const start = mode === "talking" || hasApprovedBase(p)
+    ? `Empieza leyendo el skill y sus referencias y revisa lo que ya hay en el proyecto. Sin entrevista: escribe brief.md con los datos del proyecto y de la marca (marca la fuente de cada campo) y haz solo las preguntas que bloquean, como dice "Arranque y preguntas" del system prompt (como máximo una ronda de ≤ 3). No construyas nada antes de tener el shotlist aprobado.`
+    : `Empieza leyendo el skill y sus referencias, revisa lo que ya hay en el proyecto y haz una entrevista corta (mcp__studio__ask_user, como máximo 2 rondas de ≤ 3 preguntas, sin repetir lo que ya responden el proyecto, la marca o lo de abajo). No construyas nada antes de tener el brief confirmado y el shotlist aprobado.`;
+  return `Vamos a producir ${what} para el proyecto "${p.title}".${brief?.trim() ? `\n\nMi idea / brief inicial:\n${brief.trim()}` : ""}${answered ? `\n\n${answered}` : ""}
 
-Empieza leyendo el skill y sus referencias, revisa lo que ya hay en el proyecto y arranca con la entrevista creativa (usa mcp__studio__ask_user). No construyas nada antes de tener el brief confirmado y el shotlist aprobado.`;
+${start}`;
+}
+
+/** Opciones de la tarjeta de inicio como respuestas ya dadas (para el arranque o para una sesión viva). */
+export function flagsText(p: Project, flags?: StartFlags): string {
+  if (!flags) return "";
+  const out: string[] = [];
+  if (flags.useBrand !== undefined) {
+    const b = flags.useBrand ? activeBrand(p, flags) : null;
+    out.push(flags.useBrand
+      ? (b ? `- Marca: usar mi guía de marca "${b.name}" (colores, tipografías, voz y CTA).` : "- Marca: quería usar mi marca, pero no hay una guía completa; usa el estilo tal cual.")
+      : "- Marca: NO usar mi guía de marca en este video; usa los colores y tipografías del estilo.");
+  }
+  if (flags.music !== undefined) out.push(flags.music ? "- Música de fondo: sí (debajo de mi voz)." : "- Música de fondo: no. No generes música.");
+  if (flags.formats?.length) out.push(`- Formatos de entrega: ${flags.formats.map((x) => FMT_LABEL[x]).join(", ")}.`);
+  return out.length ? `Ya respondido (no lo vuelvas a preguntar):\n${out.join("\n")}` : "";
 }
 
 /** Mensaje al reanudar sin sesión viva (p. ej. tras reiniciar el servidor). */

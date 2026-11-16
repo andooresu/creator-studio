@@ -90,6 +90,10 @@ function styleMarkdown(style: Style): string {
     style.tokens.palette.length ? `- Paleta: ${style.tokens.palette.join(", ")}` : "",
     style.tokens.fonts.length ? `- Tipografías: ${style.tokens.fonts.join(", ")}` : "",
     style.captionPreset ? `- Preset de subtítulos: ${style.captionPreset}` : "",
+    // los colores y tipografías del estilo son de plantilla: con marca, manda la marca (ver "Prioridades" del productor)
+    style.tokens.palette.length || style.tokens.fonts.length
+      ? "- Nota: la paleta y las tipografías de este estilo son de plantilla (se reemplazan por la marca). Si el proyecto tiene guía de marca, usa sus colores y tipografías conservando los roles (fondo, texto, acento, contorno); sin marca, úsalas tal cual."
+      : "",
     style.files.length ? `- Archivos del estilo (en esta carpeta): ${style.files.join(", ")}` : "",
     "",
     style.description ? `${style.description}\n` : "",

@@ -10,10 +10,10 @@ import { load, save, id, getProject, projectDir, APP_DIR, DATA_DIR, MOTION_DIR, 
 import { scaffoldMotion, motionEnv, ensureLinks, copyStyle, isScaffolded } from "../motion/kit.ts";
 import { createStudioServer, realPrefix } from "./tools.ts";
 import type { StudioContext, QuestionAnswers, ApprovalDecision } from "./tools.ts";
-import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP } from "./prompt.ts";
+import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP, parseStartFlags, flagsText } from "./prompt.ts";
 import { getStyle as findStyleById } from "../styles/store.ts";
 const findStyle = (sid: string | null | undefined) => (sid ? findStyleById(sid) ?? null : null);
-import type { ProductionMode } from "./prompt.ts";
+import type { ProductionMode, StartFlags } from "./prompt.ts";
 import type { PendingAction, Production, ProductionEvent, ProductionStatus, Project, UsageRow } from "../../shared/types.ts";
 
 // Campos internos extra que se guardan junto a Production (no forman parte del contrato de la interfaz).
@@ -23,6 +23,8 @@ type ProdX = Production & {
   costSeen?: { session: string; usd: number; tin: number; tout: number; tcr?: number; tcw?: number };
   /** estilo con el que se preparó docs/style/ (para detectar cambios de estilo al reanudar) */
   styleId?: string | null;
+  /** opciones de la tarjeta de inicio (marca, música, formatos); las leen el system prompt y las herramientas */
+  flags?: StartFlags;
 };
 
 const MAX_EVENTS = 500;
@@ -1049,12 +1051,13 @@ function syncStyle(p: Project, prod: ProdX, dir: string, restyle: boolean): stri
     : "El usuario quitó el estilo del proyecto: ignora la guía anterior de docs/style/ y define el estilo con él.";
 }
 
-export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean }): void {
+export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean; flags?: unknown }): void {
   anthropicKey(); // error claro en español antes de tocar nada
   const env = motionEnv();
   if (!env.python) throw new Error(env.issues.find((i) => /pyenv\.sh/.test(i)) || 'Falta el entorno de Python del motor: ejecuta "sh motion/scripts/pyenv.sh" (necesita Python 3.12).');
   const existing = p.production as ProdX | null | undefined;
   const brief = opts.brief?.trim();
+  const flags = parseStartFlags(opts.flags);
   const now = new Date().toISOString();
 
   const lv = live.get(p.id);
@@ -1064,7 +1067,8 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     // sesión viva e inactiva (turno terminado): el pedido entra por la cola de mensajes, sin lanzar otro proceso
     try { ensureLinks(existing.dir); } catch {}
     const note = syncStyle(p, existing, existing.dir, Boolean(opts.restyle));
-    const text = [note, brief].filter(Boolean).join("\n\n") || "Continúa la producción desde donde quedaste.";
+    if (flags) existing.flags = flags;
+    const text = [note, flagsText(p, flags), brief].filter(Boolean).join("\n\n") || "Continúa la producción desde donde quedaste.";
     p.updatedAt = now;
     if (brief) event(p.id, { type: "user", text: brief });
     if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
@@ -1091,13 +1095,14 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     p.production = prod;
   }
   prod.mode = mode;
+  if (flags) prod.flags = flags;
   p.updatedAt = now;
   if (brief) event(p.id, { type: "user", text: brief });
   if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
   event(p.id, { type: "status", text: prod.sessionId ? "Reanudando la producción…" : "Iniciando la producción…" }, true);
-  const extra = [note, brief].filter(Boolean).join("\n\n");
+  const extra = [note, flagsText(p, flags), brief].filter(Boolean).join("\n\n");
   if (prod.sessionId) launch(p, `${resumeNote()}\n\n${extra || "Continúa la producción desde donde quedaste."}`, prod.sessionId);
-  else launch(p, buildKickoff(p, mode, brief));
+  else launch(p, buildKickoff(p, mode, brief, flags));
 }
 
 export function sendMessage(p: Project, text: string): void {

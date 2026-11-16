@@ -9,9 +9,10 @@ import dns from "node:dns/promises";
 import { z } from "zod";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-import { id, load, getProject, getBrand, APP_DIR, MOTION_DIR } from "../db.ts";
+import { id, load, getProject, getBrand, projectDir, APP_DIR, MOTION_DIR } from "../db.ts";
 import { renderMotion, sheetMotion, mediaUrl, runMotion, ensureLinks } from "../motion/kit.ts";
 import { generateSpeech, generateMusic, generateSfx, listVoices as listProviderVoices } from "../audio/provider.ts";
+import { run as runCmd } from "../media.ts";
 import { FORMATS } from "../../shared/types.ts";
 import type { AgentApproval, AgentQuestion, AudioProvider, PendingAction, ProductionEvent, RenderOutput } from "../../shared/types.ts";
 
@@ -274,6 +275,51 @@ function identicalFiles(dir: string, rels: string[]): boolean {
   } catch { return false; }
 }
 
+/** Modo de producción y opción de música de la tarjeta de inicio (los guarda el runner en project.production). */
+function musicContext(pid: string): { talking: boolean; musicOff: boolean } {
+  const prod = getProject(pid)?.production as { mode?: string; flags?: { music?: boolean } } | null | undefined;
+  return { talking: prod?.mode === "talking", musicOff: prod?.flags?.music === false };
+}
+
+/**
+ * Muestra de 15 s de la música bajo la voz al nivel final aproximado (música −20 dB con ducking por la voz),
+ * para juzgar la variante en contexto. La voz puede ser un audio o un video (se usa su pista de audio).
+ */
+/** La voz para la muestra: un archivo del proyecto de motion o, en solo lectura, la grabación o el corte de la
+ *  edición del mismo proyecto (recording/ o edit/), con la ruta real resuelta para que un enlace no escape. */
+function voiceSource(ctx: StudioContext, voiceRel: string): { abs: string; rel: string } {
+  const pdir = fs.realpathSync(projectDir(ctx.pid));
+  const cand = path.isAbsolute(voiceRel) ? voiceRel : path.join(ctx.dir, voiceRel);
+  if (!fs.existsSync(cand)) throw new Error(`No existe la voz ${voiceRel}.`);
+  const abs = fs.realpathSync(cand);
+  const rel = path.relative(pdir, abs);
+  const top = rel.split(path.sep)[0];
+  if (rel.startsWith("..") || path.isAbsolute(rel) || !["motion", "recording", "edit"].includes(top)) throw new Error(`La voz debe ser un archivo de este proyecto (audio del motor, la grabación o el corte): ${voiceRel}.`);
+  return { abs, rel };
+}
+
+async function previewUnderVoice(ctx: StudioContext, musicRel: string, voiceRel: string): Promise<string> {
+  const voice = voiceSource(ctx, voiceRel);
+  if (!fs.existsSync(voice.abs) || !fs.statSync(voice.abs).isFile()) throw new Error(`No existe la voz ${voice.rel}.`);
+  const music = safeRel(ctx.dir, musicRel);
+  const base = path.basename(music.rel).replace(/\.[^.]+$/, "");
+  const outRel = outPath(ctx, "audio/previews", `${base}-bajo-voz-15s`, "wav");
+  const out = safeRel(ctx.dir, outRel);
+  fs.mkdirSync(path.dirname(out.abs), { recursive: true });
+  await runCmd("ffmpeg", [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-t", "15", "-i", voice.abs,
+    "-t", "15", "-i", music.abs,
+    "-filter_complex",
+    "[0:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[v][key];" +
+    "[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=-20dB[m];" +
+    "[m][key]sidechaincompress=threshold=0.05:ratio=4:attack=20:release=300[md];" +
+    "[v][md]amix=inputs=2:duration=first:normalize=0,afade=t=out:st=14:d=1[out]",
+    "-map", "[out]", "-ar", "48000", out.abs,
+  ], { timeoutMs: 2 * 60 * 1000 });
+  return out.rel;
+}
+
 const fmtSchema = z.enum(FORMATS as unknown as [string, ...string[]]);
 
 /** Definiciones de las herramientas (exportadas también para pruebas). */
@@ -357,19 +403,25 @@ export function studioTools(ctx: StudioContext) {
 
   const audioMusic = tool(
     "audio_music",
-    "Genera música original con el modo de audio elegido en Ajustes (ElevenLabs Music, ACE-Step local o el sintetizador music.py). Guarda cada variante en audio/variants/ y devuelve sus rutas. ElevenLabs/ACE-Step: describe solo el sonido (género, BPM, instrumentos, mood, producción, curva de energía contra el shotlist), instrumental. Sintetizado (y local sin ACE-Step): la música sale de timeline.json (bpm, duration, marks, music.chords/sections/accents/seed); escribe esos campos ANTES de llamar y, para otra variante, cámbialos (seed, acordes, secciones) y vuelve a llamar. Publica las variantes con publish:true, show_media o request_approval(kind musica) para elegir por oído.",
+    "Genera música original con el modo de audio elegido en Ajustes (ElevenLabs Music, ACE-Step local o el sintetizador music.py). Guarda cada variante en audio/variants/ y devuelve sus rutas. ElevenLabs/ACE-Step: describe solo el sonido (género, BPM, instrumentos, mood, producción, curva de energía contra el shotlist), instrumental. Sintetizado (y local sin ACE-Step): la música sale de timeline.json (bpm, duration, marks, music.chords/sections/accents/seed); escribe esos campos ANTES de llamar y, para otra variante, cámbialos (seed, acordes, secciones) y vuelve a llamar. Publica las variantes con publish:true, show_media o request_approval(kind musica) para elegir por oído. Modo talking: máximo 2 variantes; publica SIEMPRE la música sola y, si ayuda, la muestra de 15 s bajo la voz (preview_voice), nunca solo mezclas donde domina la voz; respeta si el usuario apagó la música.",
     {
       prompt: z.string().describe("brief musical de ESTE proyecto (en inglés suele funcionar mejor); en modo sintetizado, una descripción corta de la variante"),
       length_seconds: z.number().min(3).max(600).optional().describe("duración en segundos (por defecto la de timeline.json)"),
       variants: z.number().int().min(1).max(4).optional().describe("cuántas variantes con este prompt (por defecto 1; en modo sintetizado siempre 1)"),
       name: z.string().optional().describe("nombre base de los archivos, ej. 'directo-a'"),
-      publish: z.boolean().optional().describe("publicar las variantes en la sesión para escucharlas (por defecto false)"),
+      publish: z.boolean().optional().describe("publicar las variantes en la sesión para escucharlas (por defecto false): se publica la música sola y, con preview_voice, también la muestra bajo la voz"),
+      preview_voice: z.string().optional().describe("la voz: ruta relativa al proyecto de motion (p. ej. audio/voice.wav) o la ruta del corte/grabación que aparece en los datos del proyecto: además crea una muestra de 15 s de cada variante bajo la voz al nivel final (−20 dB con ducking) en audio/previews/"),
+      user_asked: z.boolean().optional().describe("true solo si el usuario pidió música en el chat después de haberla apagado al iniciar"),
     },
-    safe(async ({ prompt, length_seconds, variants, name, publish }) => {
+    safe(async ({ prompt, length_seconds, variants, name, publish, preview_voice, user_asked }) => {
       const mode = audioMode();
+      const mc = musicContext(ctx.pid);
+      if (mc.musicOff && !user_asked) throw new Error("El usuario apagó «Música de fondo» al iniciar: no generes música. Si él la pide en el chat, vuelve a llamar con user_asked:true.");
       const seconds = length_seconds ?? timelineSeconds(ctx.dir) ?? 30;
-      const n = mode === "sintetizado" ? 1 : variants || 1;
       const notes: string[] = [];
+      let n = mode === "sintetizado" ? 1 : variants || 1;
+      // talking: la música es secundaria (va bajo la voz); 2 variantes alcanzan para elegir y ahorran créditos
+      if (mc.talking && n > 2) { n = 2; notes.push("Modo talking: máximo 2 variantes por llamada."); }
       if (mode === "sintetizado" && (variants || 1) > 1) notes.push("En modo sintetizado cada llamada da una sola variante: cambia music.seed / chords / sections en timeline.json y vuelve a llamar.");
       const one = async (): Promise<string> => {
         const outRel = outPath(ctx, "audio/variants", name || "musica", audioExt(mode));
@@ -388,8 +440,21 @@ export function studioTools(ctx: StudioContext) {
       if (!out.length) throw new Error(errors[0] || "No se generó música.");
       const rels = out.map((x) => x.replace(/ \(.*\)$/, ""));
       if (rels.length > 1 && identicalFiles(ctx.dir, rels)) notes.push("Las variantes salieron idénticas (este motor es determinista con la misma entrada): cambia la entrada para obtener variantes distintas.");
-      if (publish) publishAudio(rels, `Música (${PROVIDER_LABEL[mode]}): ${rels.length} variante${rels.length > 1 ? "s" : ""}`);
-      return ok(`Música generada con ${PROVIDER_LABEL[mode]} (${out.length}/${n}):\n${out.map((p) => `- ${p}`).join("\n")}${errors.length ? `\nFallaron ${errors.length}: ${errors[0]}` : ""}${notes.length ? `\nNotas: ${[...new Set(notes)].join(" ")}` : ""}\nSiguiente: analiza (beats.py), luego publica para elegir por oído.`);
+      // muestras bajo la voz (opcionales): siempre además de la música sola, nunca en su lugar
+      const previews: string[] = [];
+      if (preview_voice) {
+        for (const r of rels) {
+          try { previews.push(await previewUnderVoice(ctx, r, preview_voice)); }
+          catch (e) { notes.push(`No se pudo crear la muestra bajo la voz de ${r}: ${(e as Error)?.message || e}`); }
+        }
+      }
+      if (publish) {
+        const tag = (i: number): string => (rels.length > 1 ? ` ${String.fromCharCode(65 + i)}` : "");
+        rels.forEach((r, i) => publishAudio([r], `Variante${tag(i)} — música sola (${PROVIDER_LABEL[mode]})`));
+        previews.forEach((r, i) => publishAudio([r], `Variante${tag(i)} — muestra de 15 s bajo tu voz (nivel final)`));
+      }
+      const prevTxt = previews.length ? `\nMuestras de 15 s bajo la voz (nivel final, −20 dB con ducking):\n${previews.map((p) => `- ${p}`).join("\n")}` : "";
+      return ok(`Música generada con ${PROVIDER_LABEL[mode]} (${out.length}/${n}):\n${out.map((p) => `- ${p}`).join("\n")}${prevTxt}${errors.length ? `\nFallaron ${errors.length}: ${errors[0]}` : ""}${notes.length ? `\nNotas: ${[...new Set(notes)].join(" ")}` : ""}\nSiguiente: analiza (beats.py), luego publica para elegir por oído${mc.talking ? " (la música sola de cada variante, más su muestra bajo la voz si la hiciste; en el resumen di qué es cada archivo)" : ""}.`);
     }),
   );
 

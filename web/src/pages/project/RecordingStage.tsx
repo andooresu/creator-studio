@@ -1,5 +1,6 @@
 // 4. Grabación: recomendaciones, checklist (guardado por proyecto en localStorage),
-// teleprompter y carga de la grabación (subida o desde la carpeta de crudos).
+// teleprompter y carga de la grabación (subida o desde la carpeta de crudos). Al cargarla, el servidor lanza
+// la propuesta visual y ProjectView lleva la vista a Concepto para ver el progreso.
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { ArrowRight, ScrollText, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
@@ -57,6 +58,7 @@ export function RecordingStage({ p, running, run, setProject, goStage }: StagePr
     );
   }
   const script = p.script;
+  const conceptRunning = running && p.job?.stage === "concepto";
 
   const toggle = (i: number, checked: boolean) => {
     const next = { ...checks, [String(i)]: checked };
@@ -124,8 +126,22 @@ export function RecordingStage({ p, running, run, setProject, goStage }: StagePr
             <Button variant="secondary" className="mt-2" disabled={!rawSel} onClick={() => void pickRaw()}>Usar este archivo</Button>
           </div>
           {p.recording ? (
-            <div className="card"><h3>Siguiente</h3><p className="small muted">La IA revisa tu grabación y propone el concepto visual antes de editar.</p>
-              <Button disabled={running} onClick={() => { run("concept").catch(() => {}); }}>Generar propuesta visual<ArrowRight aria-hidden /></Button></div>
+            // Al cargar la grabación el servidor lanza solo la propuesta visual: aquí solo se ve en qué va.
+            <div className="card" role="status" aria-live="polite">
+              {conceptRunning ? (
+                <div className="flex items-center gap-2.5"><div className="spinner" /><p className="small m-0">La IA está revisando tu grabación para proponer el concepto visual…</p></div>
+              ) : p.concept ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="small m-0 grow"><Tag tone="g">Listo</Tag> La propuesta visual ya está lista.</p>
+                  <Button size="sm" onClick={() => goStage("concepto")}>Ver propuesta<ArrowRight aria-hidden /></Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="small muted m-0 grow">Falta la propuesta visual de tu grabación.</p>
+                  <Button size="sm" variant="secondary" disabled={running} onClick={() => { run("concept").catch(() => {}); }}>Generar propuesta visual</Button>
+                </div>
+              )}
+            </div>
           ) : null}
         </div>
       </div>

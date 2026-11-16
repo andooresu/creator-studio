@@ -1,7 +1,7 @@
 # Talking karaoke
 
 ## Esencia
-- Persona a cámara (talking head) en 9:16 con **subtítulos karaoke**: trozos de 3–4 palabras y la palabra que se está diciendo en amarillo con un pequeño salto.
+- Persona a cámara (talking head) en 9:16 con **subtítulos karaoke**: trozos de 3–4 palabras y la palabra que se está diciendo en el color de acento (el de la marca; amarillo `#FFD43B` solo sin marca) con un pequeño salto.
 - La energía viene de la cámara y del montaje sobre la voz: **punch-ins** en los énfasis, cortes de tomas limpios, **b-roll** que entra sobre la imagen cuando la voz nombra algo mostrable.
 - Se ve nativo de redes, directo y rápido; nada de adornos de plantilla.
 - Para opinión, educación corta, consejos, anuncios guiados por la voz, 20–90 s.
@@ -27,7 +27,7 @@ Helpers en `helpers/talking.js` (`window.TALK`): cópialo a `film/talking.js` y 
 | **Deriva viva** | Micro deriva sembrada en los holds | incluida en `TALK.punch` (`drift`) |
 | **B-roll sobre la imagen** | Tarjeta con imagen o clip crece sobre la persona (o cubre todo el cuadro) cuando la voz lo nombra y sale empujada hacia abajo | `TALK.broll(t, el, inBeat, outBeat, { full })`; SFX `whoosh` suave con pico al asentar |
 | **Título de gancho** | 2–5 palabras grandes suben palabra por palabra en los primeros 2 s | `TALK.hookTitle(t, L, [-0.4, 'w2', 'w3'], outAt)` con `TYPE.line(…, { accent: [i] })` |
-| **Subtítulos karaoke** | Trozo de 3–4 palabras; la palabra hablada en amarillo con salto 10 % | `timeline.captions = { formats: ["9x16"], preset: "karaoke-amarillo" }`; `words.py` + `sync.mjs` (lo dibuja `lib/captions.js`) |
+| **Subtítulos karaoke** | Trozo de 3–4 palabras; la palabra hablada en el acento con salto 10 % | `timeline.captions = { formats: ["9x16"], preset: "karaoke-amarillo", accent: "<acento de la marca>" }` (sin marca, omite `accent`); `words.py` + `sync.mjs` (lo dibuja `lib/captions.js`) |
 | **Palabra clave + emoji** | Palabras clave más grandes en acento; emoji que salta sobre el trozo | `captions.keywords: [...]`, `captions.emoji: { "dinero": "💰" }` (con moderación: ≤ 1 emoji cada 8–10 s) |
 | **Barra de progreso (opcional)** | Barra fina arriba que avanza con el video | `TALK.progress(t, bar)` sobre un elemento de 6–8 px pegado al borde superior |
 
@@ -40,11 +40,13 @@ Resortes: `heavy` para cámara y títulos, `snappy` para tarjetas pequeñas y po
 
 ## Color
 - La imagen de la persona en su color original (sin LUT salvo aprobación con antes/después).
-- Blanco para el texto base de subtítulos, `#FFD43B` para la palabra hablada y palabras clave (o el acento de la marca si lee sobre la imagen), negro para el contorno.
+- Acento = el color de acento de la marca: palabra hablada, palabras clave, acento del título de gancho y píldora del CTA. `#FFD43B` es el acento de plantilla y se usa **solo cuando el proyecto no tiene marca**.
+- Blanco para el texto base de subtítulos, negro para el contorno.
+- Si el acento de la marca no lee sobre la imagen (contraste bajo con la piel o el fondo), no cambies de color ni preguntes: aclara u oscurece el mismo tono, engrosa el contorno o pon una caja detrás de la palabra, y anótalo en el resumen final.
 - Tarjetas de b-roll con esquina 24–32 px y sombra profunda suave; nunca glow.
 
 ## Subtítulos
-- Preset `karaoke-amarillo` (maxWords 4, maxChars 22, bump 0,1, y 0,70). Ajustes del proyecto: `accent` (color de marca si contrasta), `keywords`, `emoji`, `yAt` para subirlos cuando haya b-roll o un título en esa zona.
+- Preset `karaoke-amarillo` (maxWords 4, maxChars 22, bump 0,1, y 0,70); el nombre es de la plantilla, el color lo pone el proyecto. Ajustes del proyecto: `accent` (siempre el acento de la marca cuando hay marca, ajustado de tono si hace falta para que lea; sin marca se queda el amarillo del preset), `keywords`, `emoji`, `yAt` para subirlos cuando haya b-roll o un título en esa zona.
 - Siempre quemados en 9:16 (autoplay sin sonido). Nunca subtitular dos veces lo que ya aparece como título (`skip`).
 
 ## Transiciones
@@ -91,6 +93,14 @@ La demo (13,2 s, 100 BPM, 9:16 y 16:9) es un talking head de ejemplo con **una p
 3. Corre: `node scripts/sync.mjs && node scripts/lint.mjs --fmt 9x16 && node scripts/render.mjs --draft --fmt 9x16` (el borrador queda en `renders/draft_9x16.mp4`; `--sheet` da la hoja de contactos).
 
 Después pon tu material: tu clip a cámara en lugar de la silueta (`scripts/seq.py` → `C.drawSeq(g, frames, t, t0, box, { z, pos: [0.5, 0.4] })` con la misma `z` de punch-ins que usa la demo), tu voz (`scripts/vo.py` + `scripts/words.py`; con eso la VO de ejemplo se ignora sola), tus clips de b-roll en las tarjetas y tu @ en la píldora. Ajusta las marcas de `timeline.json` a las palabras reales de tu voz.
+
+## Cómo adaptarlo a tu marca
+1. **Arranca desde la demo:** sigue «Cómo usar la demo» y parte de esa copia.
+2. **Acento:** pon el color de acento de tu marca en `timeline.captions.accent` y úsalo también en el acento del título de gancho (`TYPE.line(…, { accent: [i] })`), las palabras clave y la píldora del CTA. Conserva los roles: un solo acento, texto base blanco, contorno negro. Si no lee sobre tu imagen, ajusta el tono (más claro u oscuro) o el contorno antes que cambiar de color.
+3. **Tipografías:** si tu marca tiene una sans propia con peso 800 (o 700), cámbiala en el `@font-face` y en `C.fonts`, y pásala a los subtítulos; revisa que los trozos de 4 palabras sigan entrando en el ancho útil a 1080. Si no, quédate con Montserrat ExtraBold.
+4. **CTA y @:** cambia la píldora «Sigue a @tumarca» por el CTA de tu guía de marca (con su verbo y su @ o sitio).
+5. **Metraje:** reemplaza la silueta por tu clip a cámara (`seq.py` + `C.drawSeq` con la misma `z` de punch-ins) y las tarjetas «TU CLIP AQUÍ» por b-roll real que pruebe lo que dice la voz; si no tienes b-roll, quítalas y deja que trabajen los punch-ins.
+6. **Voz y tono:** los títulos de gancho, palabras clave y emojis siguen la voz de la marca (sus palabras a usar y a evitar); si la marca evita emojis, no los uses.
 
 ## Si buscas otra cosa
 - ¿Un reel sin persona a cámara, todo en tipografía y motion? Usa **Punto cinético**.

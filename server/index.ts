@@ -6,9 +6,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { load, save, id, getProject, projectDir, log, APP_DIR, PROJECTS_DIR, BRANDS_DIR, INSPO_DIR, DEFAULT_BRAND } from "./db.ts";
-import { usageSummary, priceTable, MODELS } from "./ai.ts";
+import { usageSummary, priceTable, MODELS, hasKey } from "./ai.ts";
 import { tools } from "./media.ts";
-import { STAGES, startJob, analyze, writeScript, proposeConcept, runEdit, publishPack, analyzeInspoVideo, projectFromVideo, planTakes } from "./pipeline.ts";
+import { STAGES, startJob, analyzeAndScript, writeScript, proposeConcept, runEdit, publishPack, analyzeInspoVideo, projectFromVideo, planTakes } from "./pipeline.ts";
 import { generateGuides, iterateGuide, snapshot } from "./brand.ts";
 import { fetchProfile, cleanHandle, detectPlatform, detectIgUser } from "./inspo.ts";
 import { motionRouter } from "./routes/motion.ts";
@@ -291,12 +291,48 @@ app.delete("/api/projects/:id", wrap(async (req, res) => {
 }));
 
 // 1. Referencias
+/** Normaliza un link de referencia: recorta espacios y acepta solo http/https (null si no es válido). */
+function cleanRefUrl(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
+  } catch { return null; }
+}
+
+// Acepta { links: [{ url, note }] } (cada link con su nota) o la forma anterior { url | urls, note } (links separados
+// por espacios o saltos de línea, todos con la misma nota). Los links repetidos (ya en el proyecto o en la misma
+// petición) se ignoran.
 app.post("/api/projects/:id/references", wrap((req, res) => {
   const p = need(req);
-  const urls = String(req.body.url || "").split(/\s+/).filter(Boolean);
-  if (!urls.length && !req.body.note) throw new Error("Pega un link o escribe una nota");
-  (urls.length ? urls : [""]).forEach((url) => p.references.push({ id: id(), url, note: req.body.note || "", addedAt: new Date().toISOString() }));
-  log(p, `Referencia agregada: ${urls.join(", ") || "nota"}`);
+  const body = (req.body || {}) as { links?: unknown; url?: unknown; urls?: unknown; note?: unknown };
+  const items: { url: string; note: string }[] = [];
+  if (Array.isArray(body.links)) {
+    for (const l of body.links as unknown[]) {
+      const o = (l && typeof l === "object" ? l : { url: l }) as { url?: unknown; note?: unknown };
+      items.push({ url: String(o.url ?? "").trim(), note: String(o.note ?? "").trim() });
+    }
+  } else {
+    const raw = [body.url, ...(Array.isArray(body.urls) ? body.urls : [body.urls])].filter((x) => x != null).map(String).join(" ");
+    const note = String(body.note ?? "").trim();
+    for (const url of raw.split(/\s+/).filter(Boolean)) items.push({ url, note });
+  }
+  const withUrl = items.filter((x) => x.url);
+  if (!withUrl.length) throw new Error("Pega al menos un link");
+  const bad = withUrl.filter((x) => !cleanRefUrl(x.url));
+  if (bad.length) throw new Error(`${bad.length === 1 ? "Este link no es válido" : "Estos links no son válidos"} (usa http o https): ${bad.map((x) => x.url).join(", ")}`);
+  const seen = new Set(p.references.map((r) => cleanRefUrl(r.url)).filter((u): u is string => Boolean(u)));
+  const added: string[] = [];
+  for (const x of withUrl) {
+    const url = cleanRefUrl(x.url)!;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    p.references.push({ id: id(), url, note: x.note, addedAt: new Date().toISOString() });
+    added.push(url);
+  }
+  if (!added.length) throw new Error(withUrl.length === 1 ? "Ese link ya está en tus referencias" : "Esos links ya están en tus referencias");
+  log(p, `Referencia agregada: ${added.join(", ")}`);
   save();
   res.json(p);
 }));
@@ -305,7 +341,7 @@ app.post("/api/projects/:id/references/upload", sub("refs-upload"), upload.singl
   const p = need(req);
   const f = req.file;
   if (!f) throw new Error("No llegó ningún archivo. Vuelve a elegirlo.");
-  p.references.push({ id: id(), url: "", file: f.path, name: f.originalname, note: req.body.note || "", addedAt: new Date().toISOString() });
+  p.references.push({ id: id(), url: "", file: f.path, name: f.originalname, note: String(req.body?.note ?? "").trim(), addedAt: new Date().toISOString() });
   log(p, `Archivo de referencia subido: ${f.originalname}`);
   save();
   res.json(p);
@@ -318,11 +354,17 @@ app.delete("/api/projects/:id/references/:rid", wrap((req, res) => {
   res.json(p);
 }));
 
-// 2. Análisis
+/** Arranca un trabajo encadenado si se puede (hay API key y nada corriendo); si no, no hace nada y el flujo sigue como antes. */
+function autoStart(p: Project, stage: string, fn: Parameters<typeof startJob>[2]): boolean {
+  if (!hasKey() || p.job?.status === "running") return false;
+  try { startJob(p, stage, fn); return true; } catch { return false; }
+}
+
+// 2. Análisis + guion (mismo trabajo). Sin referencias pero con objetivo, escribe el guion directo.
 app.post("/api/projects/:id/analyze", wrap((req, res) => {
   const p = need(req);
-  if (!p.references.length) throw new Error("Agrega al menos una referencia");
-  startJob(p, "analisis", (step) => analyze(p, step)); // si falla (ej. sin API key) la etapa no cambia
+  if (!p.references.length && !p.goal?.trim()) throw new Error("Agrega al menos una referencia o escribe el objetivo del video");
+  startJob(p, "analisis", (step) => analyzeAndScript(p, step)); // si falla (ej. sin API key) la etapa no cambia
   p.stage = "analisis";
   res.json(p);
 }));
@@ -330,13 +372,17 @@ app.post("/api/projects/:id/analyze", wrap((req, res) => {
 // 3. Guion
 app.post("/api/projects/:id/script", wrap((req, res) => {
   const p = need(req);
-  if (!p.analysis) throw new Error("Primero analiza la referencia");
+  if (!p.analysis && !p.goal?.trim()) throw new Error("Primero analiza una referencia o escribe el objetivo del video");
   startJob(p, "guion", (step) => writeScript(p, step, req.body.feedback || ""));
   res.json(p);
 }));
 
 app.put("/api/projects/:id/script", wrap((req, res) => {
   const p = need(req);
+  // mientras la IA escribe el guion, una edición a mano se perdería al terminar: se rechaza
+  if (p.job?.status === "running" && (p.job.stage === "guion" || p.job.stage === "analisis")) {
+    return res.status(409).json({ error: "La IA está escribiendo el guion. Espera a que termine para editarlo." });
+  }
   p.script = { ...p.script, ...req.body.script };
   p.scriptApproved = false;
   log(p, "Guion editado a mano");
@@ -354,6 +400,8 @@ app.post("/api/projects/:id/approve/:gate", wrap((req, res) => {
   else throw new Error("Puerta desconocida");
   log(p, `Aprobado: ${g}`);
   save();
+  // Al aprobar la edición se prepara solo el paquete de publicación (si aún no existe).
+  if (g === "edit" && !p.publish) autoStart(p, "publicacion", (step) => publishPack(p, step));
   res.json(p);
 }));
 
@@ -394,6 +442,8 @@ app.post("/api/projects/:id/recording", sub("recording"), upload.single("file"),
     if (!(full === rawDir() || full.startsWith(rawDir() + path.sep)) || !fs.existsSync(full)) throw new Error("Archivo no válido");
     setRecording(p, full, path.basename(full));
   } else throw new Error("Sube un archivo o elige uno de tu carpeta de crudos");
+  // Con guion listo, la propuesta visual arranca sola (si no hay API key o hay otro proceso, se queda como antes).
+  if (p.script) autoStart(p, "concepto", (step) => proposeConcept(p, step));
   res.json(p);
 }));
 

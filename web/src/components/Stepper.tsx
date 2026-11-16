@@ -1,23 +1,28 @@
 // Stepper de etapas: siempre se ve en qué paso estás y qué sigue. En pantallas anchas muestra todos los pasos;
-// en el teléfono, «Paso 3 de 7 · Guion» con una barra de progreso y los pasos como fila desplazable.
+// en el teléfono, «Paso 3 de 7 · Guion» (el paso que se mira) con una barra de progreso y los pasos como fila desplazable.
 import { useEffect, useRef } from "react";
 import { Check, Lock } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 
 export interface StepItem { id: string; label: string; hint?: string }
 
-export function Stepper({ steps, current, viewing, onSelect, label = "Etapas del proyecto", lockFuture = true }: {
+export function Stepper({ steps, current, viewing, onSelect, isDone, label = "Etapas del proyecto", lockFuture = true }: {
   steps: StepItem[];
   /** índice de la etapa real del proyecto (las anteriores están hechas) */
   current: number;
   /** id del paso que se está mirando (puede ser uno anterior) */
   viewing?: string;
   onSelect?: (id: string) => void;
+  /** decide si un paso se marca como hecho (por defecto: los anteriores a `current`) */
+  isDone?: (step: StepItem, index: number) => boolean;
   label?: string;
   /** los pasos futuros no se pueden abrir */
   lockFuture?: boolean;
 }) {
-  const curStep = steps[Math.min(current, steps.length - 1)];
+  // la cabecera del teléfono muestra el paso que se mira (o el actual si no se indica)
+  const viewIdx = viewing ? steps.findIndex((s) => s.id === viewing) : -1;
+  const headIdx = viewIdx >= 0 ? viewIdx : Math.min(current, steps.length - 1);
+  const headStep = steps[headIdx];
   const pct = Math.round((Math.min(current, steps.length) / steps.length) * 100);
   const olRef = useRef<HTMLOListElement>(null);
   const focusRef = useRef<HTMLLIElement>(null);
@@ -41,13 +46,13 @@ export function Stepper({ steps, current, viewing, onSelect, label = "Etapas del
   return (
     <nav aria-label={label} className="mb-4">
       <div className="mb-2 flex items-baseline justify-between gap-3 md:hidden">
-        <span className="text-[13px] text-muted-foreground">Paso {Math.min(current + 1, steps.length)} de {steps.length}</span>
-        <b className="text-[14px] font-semibold tracking-[-0.02em]">{curStep?.label}</b>
+        <span className="text-[13px] text-muted-foreground">Paso {headIdx + 1} de {steps.length}</span>
+        <b className="text-[14px] font-semibold tracking-[-0.02em]">{headStep?.label}</b>
       </div>
       <div className="mb-2 h-1 overflow-hidden rounded-full bg-surface-2 md:hidden" aria-hidden><div className="h-full rounded-full bg-foreground" style={{ width: `${pct}%` }} /></div>
       <ol ref={olRef} tabIndex={onSelect ? undefined : 0} aria-label={onSelect ? undefined : `${label}: paso ${Math.min(current + 1, steps.length)} de ${steps.length}`} className="relative flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] md:grid md:overflow-visible" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
         {steps.map((s, i) => {
-          const done = i < current;
+          const done = isDone ? isDone(s, i) : i < current;
           const isCur = i === current;
           const locked = lockFuture && i > current;
           const isView = viewing ? s.id === viewing : isCur;
