@@ -1,14 +1,16 @@
 // Sesión de producción del motor de video (proyectos "reel" y "clase"): un agente trabaja como en una
 // sesión de Claude Code (entrevista, música, shotlist, voz, película, crítica, render) y aquí se ve en vivo:
 // cabecera de estado, conversación (los pasos técnicos se agrupan en una fila), indicador de trabajo,
-// acción pendiente (preguntas o aprobación), caja de mensajes y tarjeta de videos.
+// barra de etapas con ETA y costo (ProgressBar), acción pendiente (preguntas, aprobación o tope de costo),
+// caja de mensajes y tarjeta de videos.
 // Sondea el proyecto cada 2 s mientras el agente trabaja o espera.
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   Check, ChevronDown, CircleAlert, CircleHelp, CornerDownRight, FileText, Film, ShieldCheck, Square, TriangleAlert,
 } from "lucide-react";
 import type {
-  AgentApproval, AgentQuestion, Format, Production, ProductionEvent, ProductionStatus, Project, StyleSummary,
+  AgentApproval, AgentQuestion, Format, PendingAction, Production, ProductionBudget, ProductionEstimate, ProductionEvent,
+  ProductionStatus, Project, ProjectKind, StyleSummary,
 } from "../../../../shared/types.ts";
 import { api } from "../../api.ts";
 import { useApp, usePoll } from "../../store.tsx";
@@ -20,6 +22,8 @@ import { ExportCard } from "@/components/ExportCard.tsx";
 import { AndooMark } from "@/components/brand/AndooMark.tsx";
 import { useElapsed, fmtElapsed } from "@/hooks/use-elapsed.ts";
 import { cn } from "@/lib/utils.ts";
+import { ProgressBar, spentOf } from "./ProgressBar.tsx";
+import { CapField, EstimateLine, capInvalid, parseCap, useCapValue, useEstimate, usdShort } from "./Estimate.tsx";
 
 // ---------- Etiquetas compartidas (también las usan la barra lateral y el tablero) ----------
 export { KIND_LABEL, PROD_STATUS_LABEL } from "../../ui.tsx";
@@ -331,7 +335,7 @@ function Header({ p, prod, status, style, busy, onStop }: {
         ) : null}
       </span>
       <span className="grow" />
-      <span className="text-muted-foreground">Costo hasta ahora <b className="font-medium text-foreground tabular-nums">{money(prod?.costUsd)}</b></span>
+      <span className="text-muted-foreground">Costo hasta ahora <b className="font-medium text-foreground tabular-nums">{status === "running" && spentOf(prod).live ? "≈ " : ""}{money(spentOf(prod).spent)}</b></span>
       {live ? <StopButton busy={busy} onStop={onStop} /> : null}
     </div>
   );
@@ -396,6 +400,9 @@ function QuestionCard({ q, onSubmit, busy }: { q: AgentQuestion; onSubmit: (answ
 
   return (
     <div className="grid gap-6">
+      {q.round && q.maxRounds ? (
+        <span className="-mt-2 w-fit rounded-full bg-surface-3 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">Ronda {q.round} de {q.maxRounds}</span>
+      ) : null}
       {q.questions.map((x, qi) => {
         const multi = !!x.multiSelect;
         const chosen = sel[x.question] || [];
@@ -510,13 +517,65 @@ function ApprovalCard({ a, onDecide, busy, events, total }: {
   );
 }
 
-function PendingCard({ children, question }: { children: ReactNode; question: boolean }) {
+// ---------- Acción pendiente: tope de costo ----------
+function BudgetCard({ b, busy, onRaise, onStop }: {
+  b: ProductionBudget; busy: boolean; onRaise: (raiseTo: number) => Promise<void>; onStop: () => Promise<void>;
+}) {
+  const [val, setVal] = useState(String(b.suggestedUsd));
+  useEffect(() => { setVal(String(b.suggestedUsd)); }, [b.id, b.suggestedUsd]);
+  const raiseTo = parseCap(val);
+  const valid = raiseTo !== undefined && raiseTo > b.spentUsd;
+  const id = `budget-${b.id}`;
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-1.5">
+        <h3 className="m-0 text-[18px] font-semibold normal-case tracking-[-0.02em] text-foreground">Llegaste al tope de este video</h3>
+        <p className="m-0 text-[14px] leading-relaxed text-muted-foreground tabular-nums">
+          Llevas <b className="font-medium text-foreground">US{money(b.spentUsd)}</b> de un tope de <b className="font-medium text-foreground">{usdShort(b.capUsd)}</b>.
+          El productor se pausó para no gastar más sin tu permiso. Sube el tope para que continúe donde quedó, o detén aquí.
+        </p>
+      </div>
+      <div className="grid gap-1.5">
+        <label htmlFor={id} className="text-[13px] font-medium">Nuevo tope (US$)</label>
+        <input
+          id={id}
+          type="number"
+          min="0"
+          step="0.5"
+          inputMode="decimal"
+          value={val}
+          aria-invalid={!valid || undefined}
+          aria-describedby={`${id}-help`}
+          onChange={(e) => setVal(e.target.value)}
+          className={cn(FIELD, "max-w-[180px] tabular-nums")}
+        />
+        <span id={`${id}-help`} className="text-[12px] text-muted-foreground tabular-nums">
+          {valid ? "Te volverá a preguntar si llega a este nuevo tope." : `Debe ser mayor que lo que llevas (US${money(b.spentUsd)}).`}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy || !valid} onClick={() => { if (raiseTo !== undefined) void onRaise(raiseTo); }}>{busy ? "Enviando…" : "Subir tope y continuar"}</Button>
+        <Button variant="ghost" disabled={busy} className="text-danger hover:text-danger" onClick={() => { void onStop(); }}>Detener aquí</Button>
+      </div>
+    </div>
+  );
+}
+
+type PendingKind = PendingAction["type"];
+const PENDING_LABEL: Record<PendingKind, { aria: string; title: string }> = {
+  question: { aria: "Pregunta del productor", title: "El productor necesita tu respuesta" },
+  approval: { aria: "Aprobación pendiente", title: "Revisa y aprueba" },
+  budget: { aria: "Tope de costo alcanzado", title: "El productor está en pausa" },
+};
+function PendingCard({ children, kind }: { children: ReactNode; kind: PendingKind }) {
+  const l = PENDING_LABEL[kind];
+  const budget = kind === "budget";
   return (
     <section
-      aria-label={question ? "Pregunta del productor" : "Aprobación pendiente"}
-      className="rounded-xl bg-surface-2 p-5 shadow-lift ring-1 ring-blue/45 ring-inset"
+      aria-label={l.aria}
+      className={cn("rounded-xl bg-surface-2 p-5 shadow-lift ring-1 ring-inset", budget ? "ring-warning/50" : "ring-blue/45")}
     >
-      <h2 className="m-0 mb-4 text-[13px] font-medium text-blue">{question ? "El productor necesita tu respuesta" : "Revisa y aprueba"}</h2>
+      <h2 className={cn("m-0 mb-4 text-[13px] font-medium", budget ? "text-warning" : "text-blue")}>{l.title}</h2>
       {children}
     </section>
   );
@@ -524,8 +583,12 @@ function PendingCard({ children, question }: { children: ReactNode; question: bo
 
 // ---------- Inicio / retomar ----------
 const BRIEF_CHIPS = ["Reel de 15 s para Instagram", "Tono cercano y directo", "Termina con «Escríbenos»"];
-function StartCard({ p, resume, busy, onStart }: { p: Project; resume: boolean; busy: boolean; onStart: (brief: string) => Promise<boolean> }) {
+function StartCard({ p, resume, busy, est, capNow, onStart }: {
+  p: Project; resume: boolean; busy: boolean; est: ProductionEstimate | null; capNow?: number;
+  onStart: (brief: string, capUsd?: number) => Promise<boolean>;
+}) {
   const [brief, setBrief] = useState("");
+  const [cap, setCap] = useCapValue(est, capNow);
   const ref = useRef<HTMLTextAreaElement>(null);
   const explain = p.kind === "clase"
     ? "Cuenta qué quieres explicar, a quién y en cuánto tiempo. El productor te hará preguntas, propondrá guion, voz, música y plan de tomas, y te pedirá aprobación en cada paso."
@@ -551,8 +614,13 @@ function StartCard({ p, resume, busy, onStart }: { p: Project; resume: boolean; 
         />
         <Chips label="Ideas para el brief" items={BRIEF_CHIPS} onPick={(t) => { setBrief((b) => insertText(b, t)); ref.current?.focus(); }} />
       </div>
+      <div className="grid gap-3 rounded-lg bg-surface-2/60 p-3.5">
+        <EstimateLine est={est} />
+        <CapField id={`cap-${p.id}`} value={cap} onChange={setCap} disabled={busy} defaultCap={est?.capUsd} />
+      </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Button disabled={busy} onClick={() => { void onStart(brief).then((ok) => { if (ok) setBrief(""); }); }}>{busy ? "Iniciando…" : "Empezar producción"}</Button>
+        {/* un tope inválido no se descarta en silencio: hay que corregirlo antes de empezar */}
+        <Button disabled={busy || capInvalid(cap)} aria-describedby={capInvalid(cap) ? `cap-${p.id}-help` : undefined} onClick={() => { void onStart(brief, parseCap(cap)).then((ok) => { if (ok) setBrief(""); }); }}>{busy ? "Iniciando…" : "Empezar producción"}</Button>
         {p.goal ? <span className="text-[12px] text-muted-foreground">Objetivo del proyecto: {p.goal}</span> : null}
       </div>
     </section>
@@ -665,6 +733,9 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
   const style = (state?.styles || []).find((s) => s.id === p.styleId);
 
   const [busy, setBusy] = useState(false);
+  // Estimación (cálculo puro en el servidor): para StartCard y el tope de Ajustes en el medidor de costo.
+  const mode = ((prod as { mode?: ProjectKind } | null)?.mode || p.kind || "talking") as ProjectKind;
+  const est = useEstimate(p.id, mode);
 
   // Proyecto siempre fresco para el sondeo.
   const pRef = useRef(p);
@@ -686,7 +757,7 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
   useEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [events.length, pending?.data.id]);
+  }, [events.length, pending?.data?.id]);
 
   const post = async (path: string, body: unknown, okMsg?: string): Promise<boolean> => {
     setBusy(true);
@@ -700,7 +771,7 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
   };
 
   // Sin "mode": el servidor usa modeOf(p) (o el modo ya guardado), así un talking head sigue siendo talking al retomar.
-  const onStart = (brief: string) => post("production/start", { brief: brief.trim() || undefined }, prod ? "Producción reanudada" : "Producción iniciada");
+  const onStart = (brief: string, capUsd?: number) => post("production/start", { brief: brief.trim() || undefined, capUsd }, prod ? "Producción reanudada" : "Producción iniciada");
   const onStop = () => { void post("production/stop", {}, "Producción detenida"); };
   const onSend = (text: string) => post("production/message", { text });
   const onAnswer = async (answers: Record<string, string>) => {
@@ -708,6 +779,12 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
   };
   const onDecide = async (approved: boolean, feedback?: string) => {
     if (pending?.type === "approval") await post("production/approve", { approvalId: pending.data.id, approved, feedback }, approved ? "Aprobado" : "Cambios enviados");
+  };
+  const onRaise = async (raiseTo: number) => {
+    if (pending?.type === "budget") await post("production/budget", { budgetId: pending.data.id, raiseTo }, `Tope subido a ${usdShort(raiseTo)}: el productor continúa`);
+  };
+  const onBudgetStop = async () => {
+    if (pending?.type === "budget") await post("production/budget", { budgetId: pending.data.id, stop: true }, "Producción detenida");
   };
   const onRender = async () => { await post("motion/render", { mode: "final", formats: FINAL_FORMATS }, "Exportación final en cola"); };
 
@@ -721,9 +798,11 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
     <div className="mt-4 grid gap-4">
       <Header p={p} prod={prod} status={status} style={style} busy={busy} onStop={onStop} />
 
+      {prod ? <ProgressBar prod={prod} status={status} defaultCapUsd={est?.capUsd} /> : null}
+
       {motion && !motion.ready ? <MotionWarning issues={motion.issues} /> : null}
 
-      {showStart ? <StartCard p={p} resume={!!prod} busy={busy} onStart={onStart} /> : null}
+      {showStart ? <StartCard p={p} resume={!!prod} busy={busy} est={est} capNow={prod?.capUsd} onStart={onStart} /> : null}
 
       {events.length ? (
         <Conversation
@@ -735,11 +814,12 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
         />
       ) : null}
 
-      {pending ? (
-        <PendingCard question={pending.type === "question"}>
-          {pending.type === "question"
-            ? <QuestionCard q={pending.data} onSubmit={onAnswer} busy={busy} />
-            : <ApprovalCard a={pending.data} onDecide={onDecide} busy={busy} events={events} total={prod?.costUsd} />}
+      {pending && pending.type in PENDING_LABEL ? (
+        <PendingCard kind={pending.type}>
+          {pending.type === "question" ? <QuestionCard q={pending.data} onSubmit={onAnswer} busy={busy} />
+            : pending.type === "approval" ? <ApprovalCard a={pending.data} onDecide={onDecide} busy={busy} events={events} total={spentOf(prod).spent} />
+            : pending.type === "budget" ? <BudgetCard b={pending.data} busy={busy} onRaise={onRaise} onStop={onBudgetStop} />
+            : null}
         </PendingCard>
       ) : null}
 

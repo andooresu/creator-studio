@@ -221,6 +221,12 @@ app.put("/api/settings", wrap((req, res) => {
   }
   if (b.credits) for (const k of PROVIDERS) if (b.credits[k] !== undefined) s.credits[k] = Math.max(0, Number(b.credits[k]) || 0);
   if (b.hardStop !== undefined) s.hardStop = Boolean(b.hardStop);
+  // tope de costo por video del productor (US$; 0 = sin tope)
+  if (b.maxCostPerVideo !== undefined) {
+    const v = Number(b.maxCostPerVideo);
+    if (!Number.isFinite(v) || v < 0 || v > 1000) throw new Error("El tope de costo por video debe ser un número entre 0 y 1000 (0 = sin tope).");
+    s.maxCostPerVideo = Math.round(v * 100) / 100;
+  }
   if (b.models) for (const prov of PROVIDERS) for (const [stage, m] of Object.entries(b.models[prov] || {})) if (typeof m === "string" && m.trim()) s.models[prov][stage as AiStage] = m.trim();
   if (b.customPrices && typeof b.customPrices === "object") s.customPrices = b.customPrices as Record<string, Partial<ModelPrice>>;
   if (oneOf(EFFORTS, b.effort)) s.effort = b.effort;

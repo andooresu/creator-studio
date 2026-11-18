@@ -73,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   localVoice: "em_alex",
   sayVoice: "Paulina",
   hfToken: "",
+  maxCostPerVideo: 15, // US$ por video del productor; 0 = sin tope
 };
 
 export const id = (): string => crypto.randomBytes(5).toString("hex");
@@ -288,6 +289,31 @@ export function save(): void {
   for (const k of pendingDel) changed.add(k);
   if (pendingUsage.length) changed.add("usage");
   emitChange(changed);
+}
+
+// ---------- Valores sueltos en la tabla kv (fuera de los ajustes) ----------
+// Para datos internos que no viajan al navegador ni a load() (p. ej. "progressStats", el historial de tiempos por etapa
+// del productor). Se escriben directo en su fila (una sentencia, sin la transacción de save()) y quedan en memoria.
+const kvCache = new Map<string, unknown>();
+const KV_RESERVED = new Set(["settings"]);
+
+/** Lee un valor JSON de la tabla kv (undefined si no existe o está dañado). */
+export function kvGet<T>(key: string): T | undefined {
+  if (kvCache.has(key)) return kvCache.get(key) as T | undefined;
+  let v: unknown;
+  try {
+    const row = open().prepare("SELECT value FROM kv WHERE key = ?").get(key) as { value: string } | undefined;
+    v = row ? JSON.parse(row.value) : undefined;
+  } catch { v = undefined; }
+  kvCache.set(key, v);
+  return v as T | undefined;
+}
+
+/** Guarda un valor JSON en la tabla kv ("settings" está reservado: va por save()). */
+export function kvSet(key: string, value: unknown): void {
+  if (KV_RESERVED.has(key)) throw new Error(`La clave kv "${key}" está reservada.`);
+  open().prepare("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, JSON.stringify(value));
+  kvCache.set(key, structuredClone(value));
 }
 
 export function projectDir(pid: string): string {

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { load, getBrand, projectDir, MOTION_DIR, PROJECTS_DIR, DEFAULT_BRAND } from "../db.ts";
 import { brandToPrompt } from "../brand.ts";
+import { stagesFor, MAX_QUESTION_ROUNDS, QUESTIONS_PER_ROUND } from "./progress.ts";
 import { FORMATS } from "../../shared/types.ts";
 import type { AudioProvider, Brand, Format, Project, Settings, Style } from "../../shared/types.ts";
 
@@ -226,7 +227,7 @@ entrevista → brief.md (sin "?" y con sección Reglas) → recursos (assets) �
 # Adaptadores: herramientas de la app en lugar de las de la sesión
 | En el skill / sesión de Claude Code | Aquí usa |
 |---|---|
-| AskUserQuestion | mcp__studio__ask_user (≤ 3 preguntas por ronda, opciones concretas, la recomendada primero; cuántas rondas: ver "Arranque y preguntas") |
+| AskUserQuestion | mcp__studio__ask_user (≤ ${QUESTIONS_PER_ROUND} preguntas por ronda, opciones concretas, la recomendada primero; cuántas rondas: ver "Arranque y preguntas") |
 | ElevenLabs MCP creative_generate_in_flow (node_type music) / scripts/music.py | mcp__studio__audio_music (según el modo de audio de abajo) |
 | ElevenLabs creative_generate_speech | mcp__studio__audio_tts |
 | ElevenLabs node_type sfx | mcp__studio__audio_sfx |
@@ -238,6 +239,7 @@ entrevista → brief.md (sin "?" y con sección Reglas) → recursos (assets) �
 | node scripts/render.mjs --at / --range / --verify / --mux | mcp__studio__render_check (action at, range, verify o mux) |
 | node scripts/lint.mjs [--fmt X / --all] | mcp__studio__lint |
 | node scripts/capture.mjs <url> --sections "…" | mcp__studio__capture_site (solo URLs públicas http/https) |
+| (sin equivalente: barra de progreso de la app) | mcp__studio__progress (al empezar cada etapa; ver "Progreso") |
 Las herramientas mcp__studio__audio_* usan el modo de audio que el usuario eligió en Ajustes (ver "Audio del motor" abajo), guardan el audio dentro del proyecto (audio/variants, audio/vo, audio/sfx_samples) y devuelven la ruta relativa; con publish:true además lo publican en la sesión (como show_media). No repitas llamadas para "reintentar" si ya tienes el archivo.
 NUNCA ejecutes render.mjs, lint.mjs ni capture.mjs por Bash (ni directo, ni con node -e, ni desde otro script): abren Chromium, que no puede correr dentro del sandbox de Bash, y fallarán. Usa siempre mcp__studio__render / mcp__studio__sheet / mcp__studio__render_check / mcp__studio__lint / mcp__studio__capture_site. Esas herramientas restauran scripts/render.mjs desde el kit antes de cada uso: no lo edites.
 Los demás comandos del motor (review.py, beats.py, sync.mjs, sfx.mjs, mix.py, vo.py, words.py, seq.py, grade.py, compare_music.py, ffmpeg, ffprobe) sí van por Bash, desde la raíz del proyecto, con \`.venv/bin/python\` para Python.
@@ -284,15 +286,28 @@ Si el acento de la marca no contrasta sobre el video, ajústalo tú (tinte más 
 
 ${interviewGuide(p, mode, Boolean(brandObj))}
 
+${progressGuide(mode)}
+
 # Costo y tokens
 - No regeneres assets (música, voz, capturas, renders) sin un motivo concreto: un comentario del usuario o un fallo medido.
-- Si una herramienta falla, haz como máximo 2 reintentos con un cambio real entre intentos; después, dile al usuario qué falló y sigue con lo que tengas.
+- Si una herramienta falla, haz como máximo 2 reintentos con un cambio real entre intentos; después, dile al usuario qué falló y sigue con lo que tengas. La app pausa la sesión si una herramienta falla 3 veces seguidas o si hay 8 fallos en un mismo turno.
+- Hay un tope de costo por video: si se alcanza, la app te pausa y le pregunta al usuario si sube el tope. Al reanudar, sigue donde quedaste sin repetir trabajo.
 - Prefiere terminar con un resultado correcto y una lista corta de mejoras posibles antes que rondas abiertas de pulido. Si tras 3 rondas de crítica no llegas a todas las notas ≥ 8, entrega el mejor borrador y lista lo pendiente.
 
 # Datos del proyecto
 ${projectData(p, mode, flags)}
 
 ${modeGuide(mode, flags)}`;
+}
+
+/** Etapas de la barra de progreso del modo: el agente marca cada inicio con mcp__studio__progress. */
+function progressGuide(mode: ProductionMode): string {
+  const list = stagesFor(mode).map((s, i) => `${i + 1}. ${s.key} — «${s.label}»`).join("\n");
+  return `# Progreso
+El usuario ve una barra de progreso con las etapas de abajo y el tiempo que falta (ETA). Al EMPEZAR cada etapa llama enseguida a mcp__studio__progress con su clave (stage), en este orden; si saltas una, marca directo la siguiente. No vuelvas atrás: un nuevo render tras cambios sigue en la etapa actual.
+${list}
+- El reloj se pausa solo mientras esperas al usuario (preguntas y aprobaciones).
+- Preguntas: como máximo ${MAX_QUESTION_ROUNDS[mode]} ronda(s) de ask_user con ≤ ${QUESTIONS_PER_ROUND} preguntas cada una en toda la producción; la app no deja pasar más (al usuario se le prometió ese máximo).`;
 }
 
 /** Cuánto preguntar al arrancar, según el modo y lo que ya trae el proyecto. Manda sobre INTERVIEW.md. */
@@ -314,7 +329,7 @@ Este proyecto ya trae lo necesario (${have.join(", ")}): NO hagas la entrevista 
 - No pidas aprobación del brief por separado: va resumido en la misma aprobación del shotlist.`;
   }
   return `# Arranque y preguntas (manda sobre INTERVIEW.md)
-- Entrevista corta: como máximo 2 rondas de ask_user con ≤ 3 preguntas cada una (no las 4 × 4 de INTERVIEW.md).
+- Entrevista corta: como máximo ${MAX_QUESTION_ROUNDS[mode]} rondas de ask_user con ≤ ${QUESTIONS_PER_ROUND} preguntas cada una (no las 4 × 4 de INTERVIEW.md).
 - Antes de preguntar algo, revisa los datos del proyecto, la marca${brand ? "" : " (si hay)"} y lo que ya venga en "Ya respondido" del arranque: si ya lo responden, no lo preguntes y anótalo en brief.md con su fuente (usuario, guion, concepto, marca, estilo, por defecto).${brand ? "\n- Con marca: no preguntes colores, tipografías ni voz; salen de la guía de marca." : ""}`;
 }
 
@@ -325,7 +340,7 @@ export function buildKickoff(p: Project, mode: ProductionMode, brief?: string, f
   const answered = flagsText(p, f);
   const start = mode === "talking" || hasApprovedBase(p)
     ? `Empieza leyendo el skill y sus referencias y revisa lo que ya hay en el proyecto. Sin entrevista: escribe brief.md con los datos del proyecto y de la marca (marca la fuente de cada campo) y haz solo las preguntas que bloquean, como dice "Arranque y preguntas" del system prompt (como máximo una ronda de ≤ 3). No construyas nada antes de tener el shotlist aprobado.`
-    : `Empieza leyendo el skill y sus referencias, revisa lo que ya hay en el proyecto y haz una entrevista corta (mcp__studio__ask_user, como máximo 2 rondas de ≤ 3 preguntas, sin repetir lo que ya responden el proyecto, la marca o lo de abajo). No construyas nada antes de tener el brief confirmado y el shotlist aprobado.`;
+    : `Empieza leyendo el skill y sus referencias, revisa lo que ya hay en el proyecto y haz una entrevista corta (mcp__studio__ask_user, como máximo ${MAX_QUESTION_ROUNDS[mode]} rondas de ≤ ${QUESTIONS_PER_ROUND} preguntas, sin repetir lo que ya responden el proyecto, la marca o lo de abajo). No construyas nada antes de tener el brief confirmado y el shotlist aprobado.`;
   return `Vamos a producir ${what} para el proyecto "${p.title}".${brief?.trim() ? `\n\nMi idea / brief inicial:\n${brief.trim()}` : ""}${answered ? `\n\n${answered}` : ""}
 
 ${start}`;

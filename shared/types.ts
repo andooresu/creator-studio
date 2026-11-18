@@ -66,6 +66,8 @@ export interface Settings {
   sayVoice: string;
   /** Token de Hugging Face (solo para Stable Audio Open, que exige aceptar su licencia). */
   hfToken: string;
+  /** Tope de costo por video del productor, en US$ (0 = sin tope). */
+  maxCostPerVideo: number;
 }
 /** Lo que el navegador recibe: las claves llegan enmascaradas, nunca completas. */
 export interface PublicSettings extends Settings {
@@ -336,11 +338,55 @@ export type ProductionStatus = "idle" | "running" | "waiting" | "done" | "error"
 /** Pregunta del agente al usuario (equivale a AskUserQuestion de las sesiones). */
 export interface AgentQuestion {
   id: string;
+  /** ronda de preguntas (1…) y máximo de rondas de esta producción, para mostrar «Ronda 1 de 1» */
+  round?: number;
+  maxRounds?: number;
   questions: { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string; preview?: string }[] }[];
 }
 /** Puerta de aprobación (shotlist, música, borrador, final). */
 export interface AgentApproval { id: string; kind: "concepto" | "musica" | "voz" | "shotlist" | "borrador" | "final" | "otro"; title: string; summary: string; media?: string[] }
-export type PendingAction = { type: "question"; data: AgentQuestion } | { type: "approval"; data: AgentApproval };
+/** El productor llegó al tope de costo del video y espera que el usuario lo suba o detenga. */
+export interface ProductionBudget { id: string; capUsd: number; spentUsd: number; suggestedUsd: number }
+export type PendingAction = { type: "question"; data: AgentQuestion } | { type: "approval"; data: AgentApproval } | { type: "budget"; data: ProductionBudget };
+
+// ---------- Progreso del productor (barra de etapas con ETA) ----------
+export type ProgressStageKey = "preparacion" | "brief" | "estilo" | "propuesta" | "audio" | "construccion" | "revision" | "render";
+export interface ProgressStage {
+  key: ProgressStageKey;
+  label: string;
+  startedAt?: string;
+  endedAt?: string;
+  /** ms que contaron (sin el tiempo esperando al usuario) */
+  activeMs?: number;
+}
+export interface ProductionProgress {
+  /** etapas del modo, en orden */
+  stages: ProgressStage[];
+  /** índice de la etapa actual (-1 antes de empezar la primera) */
+  current: number;
+  /** desde cuándo cuenta el reloj de la etapa actual (null mientras está en pausa esperando al usuario) */
+  runningSince?: string | null;
+  /** ms ya contados en la etapa actual antes de runningSince */
+  currentActiveMs?: number;
+  /** ms activos que faltan (resto de la etapa actual + etapas futuras), recalculado en cada cambio. Con el reloj
+   *  corriendo vale para el instante runningSince: lo que falta ahora es etaMs − (ahora − runningSince). */
+  etaMs?: number | null;
+  /** ms activos típicos por etapa (para que la interfaz descuente localmente entre actualizaciones) */
+  typicalMs?: Partial<Record<ProgressStageKey, number>>;
+}
+/** Estimación antes de producir (sin llamar a la IA). */
+export interface ProductionEstimate {
+  lowUsd: number;
+  highUsd: number;
+  typicalUsd: number;
+  minutes: number;
+  basis: "historial" | "referencia";
+  samples: number;
+  maxQuestionRounds: number;
+  maxQuestions: number;
+  /** tope por defecto (Ajustes); 0 = sin tope */
+  capUsd: number;
+}
 
 export interface ProductionEvent {
   id: string;
@@ -364,6 +410,15 @@ export interface Production {
   costUsd: number;
   startedAt: string;
   updatedAt?: string;
+  /** barra de etapas con ETA */
+  progress?: ProductionProgress | null;
+  /** costo provisional del turno en curso (uso de los mensajes); vuelve a 0 cuando se contabiliza el resultado del turno */
+  liveUsd?: number;
+  /** tope de este video en US$; 0 o sin definir = el de Ajustes (maxCostPerVideo) */
+  capUsd?: number;
+  /** rondas de preguntas ya hechas y máximo de rondas de esta producción */
+  questionRounds?: number;
+  maxQuestionRounds?: number;
 }
 
 // ---------- Estilos (biblioteca que aprende) ----------

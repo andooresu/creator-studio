@@ -370,11 +370,15 @@ export function SettingsPage() {
       const [m, i, o] = line.trim().split(/\s+/);
       if (m && !isNaN(+i) && !isNaN(+o)) customPrices[m] = { in: +i, out: +o, cacheRead: +i / 10 };
     }
+    // Tope por video: vacío o inválido = 15 (el predeterminado); 0 = sin tope; máximo 1000.
+    const capRaw = str("maxCostPerVideo").trim().replace(",", ".");
+    const capNum = capRaw === "" ? 15 : Number(capRaw);
+    const maxCostPerVideo = isFinite(capNum) ? Math.min(1000, Math.max(0, Math.round(capNum * 100) / 100)) : 15;
     const body: SettingsUpdate = {
       metaToken: str("metaToken"), graphVersion: str("graphVersion") || undefined,
       studioName: str("studioName"), rawDir: str("rawDir"), brollDir: str("brollDir"),
       provider: str("provider") as Provider, apiKey: str("apiKey"), anthropicWorkspaceId: str("anthropicWorkspaceId"), anthropicAdminKey: str("anthropicAdminKey"), openaiKey: str("openaiKey"), openaiAdminKey: str("openaiAdminKey"), apifyToken: str("apifyToken"),
-      elevenlabsKey: str("elevenlabsKey"), elevenVoiceId: str("elevenVoiceId").trim(), elevenTtsModel: str("elevenTtsModel").trim() || "eleven_multilingual_v2", producerModel: str("producerModel").trim() || "claude-opus-5-5",
+      elevenlabsKey: str("elevenlabsKey"), elevenVoiceId: str("elevenVoiceId").trim(), elevenTtsModel: str("elevenTtsModel").trim() || "eleven_multilingual_v2", producerModel: str("producerModel").trim() || "claude-opus-5-5", maxCostPerVideo,
       audioProvider: aud, localTtsEngine: ttsEng, localVoice: str("localVoice").trim(), sayVoice: str("sayVoice").trim() || sayDefault, hfToken: str("hfToken"),
       credits: { anthropic: str("credit_anthropic"), openai: str("credit_openai") }, hardStop: str("hardStop") === "1", effort: str("effort") as Settings["effort"], cookiesBrowser: str("cookiesBrowser"), models, customPrices, efforts, styleIterateSections: str("styleIterateSections") === "1",
     };
@@ -500,6 +504,11 @@ export function SettingsPage() {
 
             <Card title="Productor (agente)" desc="El agente que dirige cada video. Siempre usa Claude con tu API key de Anthropic, aunque el proveedor general sea OpenAI."
               aside={s.has.anthropic ? <Chip tone="ok">Listo</Chip> : <Chip tone="bad">Falta la API key de Anthropic</Chip>}>
+              <div>
+                <label htmlFor="set-maxCostPerVideo" className={labelCls}>Tope de costo por video (US$)</label>
+                <input id="set-maxCostPerVideo" name="maxCostPerVideo" type="number" min="0" max="1000" step="any" inputMode="decimal" defaultValue={s.maxCostPerVideo ?? 15} aria-describedby="set-maxCostPerVideo-help" className={cn(inputCls, "max-w-[200px] tabular-nums")} />
+                <Help id="set-maxCostPerVideo-help">El productor se pausa y te pregunta antes de pasarlo. 0 = sin tope.</Help>
+              </div>
               <Advanced>
                 <div>
                   <label htmlFor="set-producerModel" className={labelCls}>Modelo del productor</label>

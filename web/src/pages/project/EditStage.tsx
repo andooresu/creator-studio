@@ -11,6 +11,7 @@ import { useApp } from "../../store.tsx";
 import { copy, fmtT, Tag } from "../../ui.tsx";
 import type { StageProps } from "./contract.ts";
 import { ProductionPanel } from "./Production.tsx";
+import { CapField, EstimateLine, capInvalid, parseCap, useCapValue, useEstimate } from "./Estimate.tsx";
 
 const FMT_LABEL: Record<Format, string> = { "9x16": "9:16", "4x5": "4:5", "1x1": "1:1", "16x9": "16:9" };
 const CHECK = { width: 16, height: 16, padding: 0, margin: 0, accentColor: "var(--blue)", flex: "none" } as const;
@@ -109,8 +110,12 @@ export function EditStage({ p, running, run, setProject, goStage }: StageProps) 
       return next.length ? FORMATS.filter((x) => next.includes(x)) : prev; // al menos un formato
     });
   };
+  // Estimación (sin llamar a la IA) y tope de costo de esta producción.
+  const est = useEstimate(p.id, "talking");
+  const [cap, setCap] = useCapValue(est, p.production?.capUsd);
   const onStyledRender = async () => {
     if (!chosenStyle) { toast("Elige un estilo", true); return; }
+    if (capInvalid(cap)) { toast("Corrige el tope para este video: escribe un número igual o mayor que 0.", true); document.getElementById(`cap-edit-${p.id}`)?.focus(); return; }
     const styleName = talkStyles.find((x) => x.id === chosenStyle)?.name || "el estilo elegido";
     const restyle = !!p.production && p.styleId !== chosenStyle;
     try {
@@ -122,7 +127,7 @@ export function EditStage({ p, running, run, setProject, goStage }: StageProps) 
       const okMsg = restyle
         ? `Estilo cambiado a «${styleName}»: el productor rehará el diseño con la nueva guía ✓`
         : p.production ? "Producción reanudada ✓" : "Producción iniciada ✓";
-      await run("production/start", { mode: "talking", styleId: chosenStyle, flags: { ...(hasBrand ? { useBrand } : {}), music, formats } }, okMsg);
+      await run("production/start", { mode: "talking", styleId: chosenStyle, flags: { ...(hasBrand ? { useBrand } : {}), music, formats }, capUsd: parseCap(cap) }, okMsg);
     } catch { /* el error ya se mostró como notificación */ }
   };
 
@@ -205,9 +210,13 @@ export function EditStage({ p, running, run, setProject, goStage }: StageProps) 
                 </label>
               ))}
             </div>
+            <div className="mt-1 grid gap-2.5 rounded-md bg-surface-2 p-3">
+              <EstimateLine est={est} />
+              <CapField id={`cap-edit-${p.id}`} value={cap} onChange={setCap} disabled={prodBusy} defaultCap={est?.capUsd} />
+            </div>
           </fieldset>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <Button variant="secondary" className="max-w-full whitespace-normal" disabled={running || prodBusy || !chosenStyle || !p.recording} onClick={() => void onStyledRender()}>
+            <Button variant="secondary" className="max-w-full whitespace-normal" disabled={running || prodBusy || !chosenStyle || !p.recording || capInvalid(cap)} onClick={() => void onStyledRender()}>
               {p.production ? <><RotateCcw aria-hidden />Producir de nuevo con este estilo</> : <><Clapperboard aria-hidden />Producir con estilo</>}
             </Button>
             <Button variant="ghost" size="sm" asChild><a href={chosenStyle ? `#/estilos/${chosenStyle}` : "#/estilos"}>Ver estilo</a></Button>

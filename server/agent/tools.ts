@@ -13,8 +13,9 @@ import { id, load, getProject, getBrand, projectDir, APP_DIR, MOTION_DIR } from 
 import { renderMotion, sheetMotion, mediaUrl, runMotion, ensureLinks } from "../motion/kit.ts";
 import { generateSpeech, generateMusic, generateSfx, listVoices as listProviderVoices } from "../audio/provider.ts";
 import { run as runCmd } from "../media.ts";
+import { STAGE_KEYS, QUESTIONS_PER_ROUND } from "./progress.ts";
 import { FORMATS } from "../../shared/types.ts";
-import type { AgentApproval, AgentQuestion, AudioProvider, PendingAction, ProductionEvent, RenderOutput } from "../../shared/types.ts";
+import type { AgentApproval, AgentQuestion, AudioProvider, PendingAction, ProductionEvent, ProgressStageKey, RenderOutput } from "../../shared/types.ts";
 
 /** Lo que el runner le da al servidor de herramientas para hablar con el proyecto. */
 export interface StudioContext {
@@ -27,6 +28,12 @@ export interface StudioContext {
   waitForUser(action: PendingAction): Promise<unknown>;
   /** registra renders terminados en Production.renders */
   addRenders(outs: RenderOutput[]): void;
+  /** marca el inicio de una etapa en la barra de progreso (solo avanza; una etapa anterior se ignora) */
+  setStage(key: ProgressStageKey, note?: string): void;
+  /** rondas de preguntas usadas y máximo de esta producción */
+  questionBudget(): { used: number; max: number };
+  /** consume una ronda de preguntas; false si ya se alcanzó el máximo (no se pregunta) */
+  useQuestionRound(): boolean;
 }
 
 export type QuestionAnswers = Record<string, string>;
@@ -330,7 +337,7 @@ export function studioTools(ctx: StudioContext) {
 
   const askUser = tool(
     "ask_user",
-    "Hace preguntas al usuario en la interfaz de la app (reemplaza a AskUserQuestion). Bloquea hasta que responda, puede tardar horas: no repitas la llamada. Hasta 4 preguntas por ronda, cada una con 2–6 opciones concretas; pon primero la recomendada y márcala con '(recomendada)'. El usuario siempre puede escribir otra respuesta libre. Devuelve las respuestas por pregunta.",
+    `Hace preguntas al usuario en la interfaz de la app (reemplaza a AskUserQuestion). Bloquea hasta que responda, puede tardar horas: no repitas la llamada. Hasta ${QUESTIONS_PER_ROUND} preguntas por ronda y un número máximo de rondas por producción (la app lo hace cumplir), cada una con 2–6 opciones concretas; pon primero la recomendada y márcala con '(recomendada)'. El usuario siempre puede escribir otra respuesta libre. Devuelve las respuestas por pregunta.`,
     {
       questions: z.array(z.object({
         question: z.string().describe("la pregunta completa, en español"),
@@ -341,10 +348,16 @@ export function studioTools(ctx: StudioContext) {
           description: z.string().optional().describe("qué implica elegirla"),
           preview: z.string().optional().describe("vista previa opcional en markdown (concepto, layout, plan de música)"),
         })).min(2).max(6),
-      })).min(1).max(4),
+      })).min(1).max(QUESTIONS_PER_ROUND),
     },
     safe(async ({ questions }) => {
-      const data: AgentQuestion = { id: id(), questions };
+      // límite de rondas: al llegar al máximo no se contacta al usuario y el agente decide por su cuenta
+      if (!ctx.useQuestionRound()) {
+        const { max } = ctx.questionBudget();
+        return ok(`Límite de preguntas alcanzado (${max} ronda(s)). No preguntes más: decide con criterio, anótalo en brief.md y sigue.`);
+      }
+      const qb = ctx.questionBudget();
+      const data: AgentQuestion = { id: id(), round: qb.used, maxRounds: qb.max, questions };
       const answers = (await ctx.waitForUser({ type: "question", data })) as QuestionAnswers;
       const lines = questions.map((q, i) => `- ${q.question}\n  → ${answers[q.question] ?? answers[String(i)] ?? "(sin respuesta)"}`);
       const extra = Object.entries(answers).filter(([k]) => !questions.some((q, i) => q.question === k || String(i) === k));
@@ -633,7 +646,20 @@ export function studioTools(ctx: StudioContext) {
     }),
   );
 
-  return [askUser, requestApproval, showMedia, audioMusic, audioTts, audioSfx, audioVoices, render, sheet, lint, captureSite, renderCheck];
+  const progress = tool(
+    "progress",
+    "Marca el inicio de una etapa en la barra de progreso que ve el usuario (con tiempo estimado). Llámala al EMPEZAR cada etapa, en orden. Solo avanza: una etapa anterior se ignora. No bloquea.",
+    {
+      stage: z.enum(STAGE_KEYS as [ProgressStageKey, ...ProgressStageKey[]]).describe("clave de la etapa que empieza"),
+      note: z.string().max(200).optional().describe("nota breve opcional para el usuario"),
+    },
+    safe(async ({ stage, note }) => {
+      ctx.setStage(stage, note?.trim() || undefined);
+      return ok("Etapa registrada.");
+    }),
+  );
+
+  return [askUser, requestApproval, showMedia, progress, audioMusic, audioTts, audioSfx, audioVoices, render, sheet, lint, captureSite, renderCheck];
 }
 
 export function createStudioServer(ctx: StudioContext): McpSdkServerConfigWithInstance {
@@ -647,4 +673,4 @@ export function createStudioServer(ctx: StudioContext): McpSdkServerConfigWithIn
 }
 
 /** Nombres completos (como los ve el modelo) de las herramientas del servidor studio. */
-export const STUDIO_TOOLS = ["ask_user", "request_approval", "show_media", "audio_music", "audio_tts", "audio_sfx", "audio_voices", "render", "sheet", "lint", "capture_site", "render_check"].map((t) => `mcp__studio__${t}`);
+export const STUDIO_TOOLS = ["ask_user", "request_approval", "show_media", "progress", "audio_music", "audio_tts", "audio_sfx", "audio_voices", "render", "sheet", "lint", "capture_site", "render_check"].map((t) => `mcp__studio__${t}`);

@@ -12,9 +12,11 @@ import { createStudioServer, realPrefix } from "./tools.ts";
 import type { StudioContext, QuestionAnswers, ApprovalDecision } from "./tools.ts";
 import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP, parseStartFlags, flagsText } from "./prompt.ts";
 import { getStyle as findStyleById } from "../styles/store.ts";
+import { costOf } from "../ai.ts";
+import { initProgress, sameStages, startStage, pauseClock, resumeClock, closeCurrent, refreshEta, recordSample, inferStage, stageLabel, MAX_QUESTION_ROUNDS } from "./progress.ts";
 const findStyle = (sid: string | null | undefined) => (sid ? findStyleById(sid) ?? null : null);
 import type { ProductionMode, StartFlags } from "./prompt.ts";
-import type { PendingAction, Production, ProductionEvent, ProductionStatus, Project, UsageRow } from "../../shared/types.ts";
+import type { PendingAction, Production, ProductionBudget, ProductionEvent, ProductionStatus, ProgressStageKey, Project, UsageRow } from "../../shared/types.ts";
 
 // Campos internos extra que se guardan junto a Production (no forman parte del contrato de la interfaz).
 type ProdX = Production & {
@@ -25,6 +27,15 @@ type ProdX = Production & {
   styleId?: string | null;
   /** opciones de la tarjeta de inicio (marca, música, formatos); las leen el system prompt y las herramientas */
   flags?: StartFlags;
+  /** tope (US$) para el que ya se avisó el 80 % (un aviso por valor de tope) */
+  capWarned?: number;
+  /**
+   * costo en vivo de un turno cortado sin resultado (detener, caída, reinicio) que ya se sumó a costUsd. Si el acumulado
+   * del SDK de la misma sesión lo trae en el siguiente resultado, account() lo descuenta para no contarlo dos veces.
+   */
+  provisionalUsd?: number;
+  /** la etapa final ya dejó su muestra de tiempo (un seguimiento que la reabre no vuelve a registrarla acumulada) */
+  finalSampled?: boolean;
 };
 
 const MAX_EVENTS = 500;
@@ -70,7 +81,28 @@ interface Live {
   stopped: boolean;
   /** ya se mostró un error de la API en este turno (evita repetirlo con el resultado) */
   turnError: boolean;
+  /** costo en vivo ya sumado por id de mensaje del turno (el SDK repite el mismo id por cada bloque; se vacía con el resultado) */
+  msgCost: Map<string, number>;
+  /** tool_use_id → nombre de la herramienta (para atribuir los errores de tool_result) */
+  toolNames: Map<string, string>;
+  /** tool_use_id → id del mensaje del asistente que la pidió (las llamadas en paralelo de un mismo mensaje son un lote) */
+  toolBatch: Map<string, string>;
+  /** errores consecutivos por herramienta (se reinician con un resultado sin error o cuando el usuario escribe) */
+  errStreak: Map<string, number>;
+  /** último lote que ya sumó un fallo a la racha de cada herramienta (un lote en paralelo cuenta una sola vez) */
+  errBatch: Map<string, string>;
+  /** aún no llegó un resultado con costo de este proceso: el acumulado reanudado puede venir de un cost-state viejo */
+  fresh: boolean;
+  /** errores de herramientas en el turno actual (se reinicia con el resultado) */
+  turnErrors: number;
+  /** se interrumpió el turno por el tope de costo: el resultado que llega no es un error */
+  budgetHit: boolean;
+  /** se interrumpió el turno por reintentos fallidos: el resultado deja la sesión en "error" sin el error genérico */
+  retryHit: boolean;
 }
+
+const MAX_TOOL_STREAK = 3; // fallos seguidos de una misma herramienta
+const MAX_TURN_ERRORS = 8; // fallos de herramientas en un mismo turno
 const live = new Map<string, Live>();
 
 /** true si el proyecto tiene una sesión del agente viva en este proceso. */
@@ -97,7 +129,185 @@ function prodOf(pid: string): ProdX | null {
 function touch(pid: string): void {
   const p = getProject(pid);
   const now = new Date().toISOString();
-  if (p) { p.updatedAt = now; if (p.production) p.production.updatedAt = now; }
+  if (p) { p.updatedAt = now; if (p.production) { p.production.updatedAt = now; syncProgress(p, p.production as ProdX); } }
+}
+
+// ---------------------------------------------------------------- progreso (etapas, reloj y ETA)
+const modeOfProd = (p: Project, prod: ProdX): ProductionMode => prod.mode || modeOf(p);
+
+/** El reloj corre solo con la producción en "running"; en cualquier otro estado queda en pausa. Recalcula la ETA. */
+function syncProgress(p: Project, prod: ProdX, at = Date.now()): void {
+  const pr = prod.progress;
+  if (!pr) return;
+  if (prod.status === "running") resumeClock(pr, at);
+  else pauseClock(pr, at);
+  refreshEta(pr, modeOfProd(p, prod), at);
+}
+
+/** Avanza la barra a `key` (solo hacia adelante y si la etapa existe en el modo); guarda la muestra de la etapa cerrada. */
+function advanceStage(pid: string, key: ProgressStageKey): boolean {
+  const p = getProject(pid);
+  const prod = p?.production as ProdX | null | undefined;
+  if (!p || !prod?.progress) return false;
+  const mode = modeOfProd(p, prod);
+  const now = Date.now();
+  const moved = startStage(prod.progress, key, now, (k, ms) => recordSample(mode, k, ms));
+  if (!moved) return false;
+  refreshEta(prod.progress, mode, now);
+  touch(pid);
+  persist();
+  return true;
+}
+
+// ---------------------------------------------------------------- tope de costo por video
+const usd = (x: number): string => (Number.isInteger(x) ? String(x) : x.toFixed(2));
+/** Tope efectivo: el de la producción (o `override`) si es > 0; si no, el de Ajustes (0 = sin tope). */
+function capOf(prod: ProdX, override?: number): number {
+  const own = override !== undefined ? override : prod.capUsd;
+  if (own !== undefined && own > 0) return own;
+  return Math.max(0, Number(load().settings.maxCostPerVideo) || 0);
+}
+const spentOf = (prod: ProdX): number => (prod.costUsd || 0) + (prod.liveUsd || 0);
+
+/** Una pregunta pendiente que se descarta sin respuesta no gasta su ronda: el agente la volverá a hacer. */
+function refundQuestion(prod: ProdX): void {
+  if (prod.pending?.type === "question" && (prod.questionRounds || 0) > 0) prod.questionRounds = (prod.questionRounds || 0) - 1;
+}
+
+/**
+ * La sesión dejó de estar viva sin el resultado del turno (detener, caída, reinicio): el costo en vivo no puede quedar
+ * colgado en liveUsd (se mezclaría con el próximo turno). Pasa a costUsd como provisional (el tope lo sigue contando)
+ * con su fila de uso, y account() descuenta el solapamiento si el acumulado de la misma sesión ya lo incluye.
+ */
+function settleLiveCost(pid: string, prod: ProdX): boolean {
+  const l = prod.liveUsd || 0;
+  if (!l) return false;
+  prod.liveUsd = 0;
+  if (!(l > 0)) return true;
+  prod.costUsd = Math.round(((prod.costUsd || 0) + l) * 1e6) / 1e6;
+  prod.provisionalUsd = Math.round(((prod.provisionalUsd || 0) + l) * 1e6) / 1e6;
+  load().usage.push({ id: id(), at: new Date().toISOString(), provider: "anthropic", stage: "produccion", projectId: pid, model: load().settings.producerModel, inputTokens: 0, outputTokens: 0, cost: Math.round(l * 1e6) / 1e6, ms: 0 });
+  return true;
+}
+function budgetData(cap: number, spent: number): ProductionBudget {
+  const suggested = Math.ceil(Math.max(cap * 1.5, cap + 5, spent + 5));
+  return { id: id(), capUsd: cap, spentUsd: Math.round(spent * 100) / 100, suggestedUsd: suggested };
+}
+const budgetText = (cap: number, spent: number): string => `Se alcanzó el tope de US$${usd(cap)} para este video (llevas US$${spent.toFixed(2)}). El productor se pausó: sube el tope o detén aquí.`;
+
+function interruptTurn(lv: Live): void {
+  try { void lv.q?.interrupt().catch(() => {}); } catch {}
+}
+
+/**
+ * Revisa el gasto contra el tope: aviso único al 80 % y, con `canHit`, al llegar al tope deja un pendiente "budget"
+ * (el usuario sube el tope o detiene) y, con `interrupt`, corta el turno. Mientras el pendiente "budget" siga, cada
+ * gasto nuevo vuelve a interrumpir (un turno en cola que arrancó igual no corre pasado el tope). Si una herramienta
+ * viva espera una pregunta/aprobación, gastar más significa trabajo en paralelo (subagentes): se interrumpe y el
+ * resultado reemplaza la pregunta por el aviso de tope. Una pregunta vieja sin herramienta se reemplaza ya.
+ */
+function checkCap(pid: string, lv: Live, canHit: boolean, interrupt = true): void {
+  const prod = prodOf(pid);
+  if (!prod) return;
+  const cap = capOf(prod);
+  if (cap <= 0) return;
+  const spent = spentOf(prod);
+  if (spent >= cap * 0.8 && prod.capWarned !== cap) {
+    prod.capWarned = cap;
+    if (spent < cap) event(pid, { type: "status", text: `Vas en US$${spent.toFixed(2)} de tu tope de US$${usd(cap)} para este video.` });
+  }
+  if (!canHit || spent < cap) return;
+  if (prod.pending?.type === "budget") { if (interrupt) { lv.budgetHit = true; interruptTurn(lv); } return; } // un turno en cola siguió gastando
+  if (prod.pending) {
+    if (lv.resolvers.has(prod.pending.data.id)) {
+      if (interrupt) { lv.budgetHit = true; interruptTurn(lv); }
+      return;
+    }
+    refundQuestion(prod); // pendiente vieja sin herramienta esperando: el aviso de tope la reemplaza
+  }
+  const data = budgetData(cap, spent);
+  prod.pending = { type: "budget", data };
+  prod.status = "waiting";
+  event(pid, { type: "status", text: budgetText(cap, spent), data }, true);
+  // sin interrupción (tope cruzado recién al contabilizar un turno ya terminado) no viene otro resultado: sin budgetHit
+  if (interrupt) { lv.budgetHit = true; interruptTurn(lv); }
+}
+
+/**
+ * Antes de lanzar o reanudar: si el gasto ya llegó al tope, deja (o conserva) el pendiente "budget" para que la
+ * interfaz muestre cómo subirlo y lanza el error. Si ya no se pasa del tope, un pendiente "budget" viejo se descarta.
+ * No se llama cuando una herramienta viva está esperando la respuesta (el chequeo en vivo se encarga).
+ */
+function guardCap(p: Project, override?: number): void {
+  const prod = p.production as ProdX | null | undefined;
+  if (!prod) return;
+  const cap = capOf(prod, override);
+  const spent = spentOf(prod);
+  if (cap <= 0 || spent < cap) {
+    // el tope ya no se alcanza (se subió en Ajustes o en este inicio): el aviso viejo sobra
+    if (prod.pending?.type === "budget") { prod.pending = null; if (prod.status === "waiting") prod.status = "idle"; }
+    return;
+  }
+  if (prod.pending?.type !== "budget") {
+    // la pregunta que quedaba se vuelve a hacer al reanudar: su ronda no cuenta
+    refundQuestion(prod);
+    const data = budgetData(cap, spent);
+    prod.pending = { type: "budget", data };
+    prod.status = "waiting";
+    event(p.id, { type: "status", text: budgetText(cap, spent), data }, true);
+  }
+  throw new Error(`Llegaste al tope de US$${usd(cap)} para este video. Súbelo para continuar.`);
+}
+
+/** Costo en vivo de un mensaje del asistente (también de subagentes): suma solo el incremento por id de mensaje. */
+function liveUsage(pid: string, lv: Live, m: Extract<SDKMessage, { type: "assistant" }>): void {
+  const msg = m.message as unknown as { id?: string; model?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null; cache_creation?: { ephemeral_1h_input_tokens?: number } | null } | null };
+  const u = msg?.usage;
+  if (!msg?.id || !u) return;
+  const prod = prodOf(pid);
+  if (!prod) return;
+  const cw = u.cache_creation_input_tokens || 0;
+  const cw1h = Math.min(cw, u.cache_creation?.ephemeral_1h_input_tokens || 0);
+  const cost = costOf(msg.model || load().settings.producerModel, { input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: cw - cw1h, cacheWrite1h: cw1h });
+  // los bloques de un mismo mensaje repiten el id con un uso que solo crece: se suma la diferencia, nunca dos veces
+  const prev = lv.msgCost.get(msg.id) || 0;
+  if (!(cost > prev)) return;
+  lv.msgCost.set(msg.id, cost);
+  prod.liveUsd = Math.round(((prod.liveUsd || 0) + cost - prev) * 1e6) / 1e6;
+  persist();
+  checkCap(pid, lv, true);
+}
+
+/** Nombre legible de una herramienta para los avisos. */
+const toolLabel = (name: string): string => name.replace(/^mcp__studio__/, "").replace(/^mcp__[^_]+__/, "");
+
+/** El usuario actuó (mensaje, respuesta, decisión, tope, inicio): los reintentos vuelven a empezar. */
+function resetRetries(lv: Live): void {
+  lv.errStreak.clear();
+  lv.errBatch.clear();
+  lv.turnErrors = 0;
+}
+
+/** Lleva la cuenta de fallos de herramientas; al pasar el límite interrumpe el turno para no gastar créditos en bucle. */
+function trackToolResults(pid: string, lv: Live, content: unknown): void {
+  if (!Array.isArray(content)) return;
+  for (const b of content as { type: string; tool_use_id?: string; is_error?: boolean }[]) {
+    if (b.type !== "tool_result") continue;
+    const name = (b.tool_use_id && lv.toolNames.get(b.tool_use_id)) || "herramienta";
+    if (!b.is_error) { lv.errStreak.set(name, 0); lv.errBatch.delete(name); continue; }
+    lv.turnErrors++;
+    // varias llamadas en paralelo del mismo mensaje que fallan juntas son un solo intento, no «veces seguidas»
+    const batch = (b.tool_use_id && lv.toolBatch.get(b.tool_use_id)) || "";
+    const sameBatch = Boolean(batch) && lv.errBatch.get(name) === batch;
+    if (batch) lv.errBatch.set(name, batch);
+    const streak = (lv.errStreak.get(name) || 0) + (sameBatch ? 0 : 1);
+    lv.errStreak.set(name, streak);
+    if (lv.retryHit || lv.budgetHit || (streak < MAX_TOOL_STREAK && lv.turnErrors < MAX_TURN_ERRORS)) continue;
+    lv.retryHit = true;
+    const why = streak >= MAX_TOOL_STREAK ? `«${toolLabel(name)}» falló ${MAX_TOOL_STREAK} veces seguidas.` : `Hubo ${MAX_TURN_ERRORS} pasos fallidos en este turno.`;
+    event(pid, { type: "error", text: `${why} Pausé al productor para no gastar más créditos. Escribe qué hacer (o «sigue» para que lo intente distinto).` }, true);
+    interruptTurn(lv);
+  }
 }
 
 function event(pid: string, ev: { type: ProductionEvent["type"]; text: string; media?: string[]; data?: unknown }, now = false): void {
@@ -624,10 +834,13 @@ function textChunks(text: string, max = 2000): string[] {
   return out.slice(0, 6);
 }
 
-function account(pid: string, m: SDKResultMessage): void {
+function account(pid: string, lv: Live, m: SDKResultMessage): void {
   const prod = prodOf(pid);
   const p = getProject(pid);
   if (!prod || !p) return;
+  // estimado en vivo de este turno: se reemplaza por el real del resultado solo cuando el delta se aplica (nunca ambos);
+  // si el resultado no sirve, pasa a provisional (settleLiveCost) en vez de perderse
+  const liveB = Math.max(0, prod.liveUsd || 0);
   const total = Number(m.total_cost_usd) || 0;
   let tin = 0;
   let tout = 0;
@@ -645,17 +858,44 @@ function account(pid: string, m: SDKResultMessage): void {
   const zeroed = total === 0 && Object.keys(mu).length === 0;
   const prev = prod.costSeen || null;
   const seen = prev && prev.session === m.session_id ? prev : null;
-  if (zeroed) return;
-  if (seen && total + 1e-9 < seen.usd) return; // retroceso: resultado parcial o en cero de la misma sesión
-  const cont = Boolean(seen);
-  const dCost = Math.max(0, cont ? total - seen!.usd : total);
-  const dIn = Math.max(0, cont && tin >= seen!.tin ? tin - seen!.tin : tin);
-  const dOut = Math.max(0, cont && tout >= seen!.tout ? tout - seen!.tout : tout);
-  // tramos de caché: solo si la línea base ya los tenía (una base antigua sin ellos daría un delta inflado)
-  const cacheKnown = !cont || (seen!.tcr !== undefined && seen!.tcw !== undefined);
-  const dCr = cacheKnown ? Math.max(0, cont && tcr >= seen!.tcr! ? tcr - seen!.tcr! : tcr) : undefined;
-  const dCw = cacheKnown ? Math.max(0, cont && tcw >= seen!.tcw! ? tcw - seen!.tcw! : tcw) : undefined;
-  prod.costSeen = { session: m.session_id, usd: total, tin: Math.max(tin, seen?.tin || 0), tout: Math.max(tout, seen?.tout || 0), tcr: Math.max(tcr, seen?.tcr || 0), tcw: Math.max(tcw, seen?.tcw || 0) };
+  if (zeroed) { settleLiveCost(pid, prod); return; } // sin dato real: el estimado del turno queda como provisional
+  const back = Boolean(seen && total + 1e-9 < seen.usd);
+  // retroceso dentro del mismo proceso (resultado parcial): la base no se mueve y el estimado queda como provisional
+  if (back && !lv.fresh) { settleLiveCost(pid, prod); return; }
+  const fresh = lv.fresh;
+  lv.fresh = false;
+  const cont = Boolean(seen) && !back;
+  let dCost: number;
+  let dIn = 0;
+  let dOut = 0;
+  let dCr: number | undefined;
+  let dCw: number | undefined;
+  if (back) {
+    // el proceso reanudado restauró un acumulado menor (el CLI guarda su cost-state solo al cerrar limpio): este turno
+    // se cuenta por su estimado en vivo y la base pasa a este acumulado para que los siguientes cuenten completos. Lo
+    // provisional anterior no está en este acumulado: queda contado tal cual, sin descontarse después.
+    dCost = liveB;
+    prod.provisionalUsd = undefined;
+  } else {
+    dCost = Math.max(0, cont ? total - seen!.usd : total);
+    // costo provisional de un turno cortado (ya sumado a costUsd): solo se descuenta lo que el acumulado demuestra
+    // incluir, es decir lo que el delta excede al estimado de este mismo turno; una sesión nueva no lo trae
+    const prov = prod.provisionalUsd || 0;
+    if (prov > 0) { if (cont) dCost -= Math.min(prov, Math.max(0, dCost - liveB)); prod.provisionalUsd = undefined; }
+    // primer resultado de un proceso reanudado: la base restaurada puede estar bajo la vista, el turno nunca vale menos
+    // que su propio estimado en vivo
+    if (fresh && cont) dCost = Math.max(dCost, liveB);
+    dIn = Math.max(0, cont && tin >= seen!.tin ? tin - seen!.tin : tin);
+    dOut = Math.max(0, cont && tout >= seen!.tout ? tout - seen!.tout : tout);
+    // tramos de caché: solo si la línea base ya los tenía (una base antigua sin ellos daría un delta inflado)
+    const cacheKnown = !cont || (seen!.tcr !== undefined && seen!.tcw !== undefined);
+    dCr = cacheKnown ? Math.max(0, cont && tcr >= seen!.tcr! ? tcr - seen!.tcr! : tcr) : undefined;
+    dCw = cacheKnown ? Math.max(0, cont && tcw >= seen!.tcw! ? tcw - seen!.tcw! : tcw) : undefined;
+  }
+  prod.liveUsd = 0;
+  prod.costSeen = back
+    ? { session: m.session_id, usd: total, tin, tout, tcr, tcw }
+    : { session: m.session_id, usd: total, tin: Math.max(tin, seen?.tin || 0), tout: Math.max(tout, seen?.tout || 0), tcr: Math.max(tcr, seen?.tcr || 0), tcw: Math.max(tcw, seen?.tcw || 0) };
   if (dCost <= 0 && dIn <= 0 && dOut <= 0) return;
   prod.costUsd = Math.round(((prod.costUsd || 0) + dCost) * 1e6) / 1e6;
   const models = Object.entries(mu).sort((a, b) => (b[1].costUSD || 0) - (a[1].costUSD || 0)).map(([k]) => k);
@@ -694,6 +934,14 @@ function handleMessage(pid: string, lv: Live, m: SDKMessage, dir: string): void 
   }
   if ((m.type === "assistant" || m.type === "user") && !m.parent_tool_use_id) activity(pid, lv);
   if (m.type === "assistant") {
+    // costo en vivo y nombres de herramientas: también de los subagentes (su gasto cuenta igual)
+    const msgId = (m.message as unknown as { id?: string } | null)?.id || "";
+    for (const b of (m.message?.content || []) as unknown as { type: string; id?: string; name?: string }[]) {
+      if (b.type !== "tool_use" || !b.id || !b.name) continue;
+      lv.toolNames.set(b.id, b.name);
+      if (msgId) lv.toolBatch.set(b.id, msgId);
+    }
+    liveUsage(pid, lv, m);
     if (m.parent_tool_use_id) return; // mensajes internos de subagentes (crítico)
     if (m.error) {
       const ERR: Record<string, string> = {
@@ -716,13 +964,21 @@ function handleMessage(pid: string, lv: Live, m: SDKMessage, dir: string): void 
     for (const b of content) {
       if (b.type === "text" && b.text) for (const chunk of textChunks(b.text)) event(pid, { type: "assistant", text: chunk });
       else if (b.type === "tool_use" && b.name) {
-        const d = describeTool(b.name, (b.input || {}) as Record<string, unknown>, dir);
+        const inp = (b.input || {}) as Record<string, unknown>;
+        // inferencia de etapa por si el agente no llamó a progress (solo avanza)
+        const st = inferStage(b.name, inp);
+        if (st) advanceStage(pid, st);
+        const d = describeTool(b.name, inp, dir);
         if (d) event(pid, { type: "tool", text: d, data: { tool: b.name } });
       }
     }
     return;
   }
   if (m.type === "user") {
+    // la app ya cortó el turno (tope o reintentos): los resultados que llegan son de herramientas canceladas por esa
+    // interrupción, no fallos que el productor vaya a corregir ni intentos que sumen a las rachas
+    if (lv.retryHit || lv.budgetHit) return;
+    trackToolResults(pid, lv, m.message?.content); // también los fallos dentro de subagentes
     if (m.parent_tool_use_id) return;
     const content = m.message?.content;
     if (!Array.isArray(content)) return;
@@ -735,14 +991,56 @@ function handleMessage(pid: string, lv: Live, m: SDKMessage, dir: string): void 
     return;
   }
   if (m.type === "result") {
-    account(pid, m);
+    account(pid, lv, m);
     const hadError = lv.turnError;
     lv.turnError = false;
+    const budgetHit = lv.budgetHit;
+    const retryHit = lv.retryHit;
+    lv.budgetHit = false;
+    lv.retryHit = false;
+    lv.turnErrors = 0;
+    lv.msgCost.clear();
+    lv.toolNames.clear();
+    lv.toolBatch.clear();
     // queued_turn_count > 0: el usuario escribió durante el turno y viene otro turno (y otro resultado) enseguida
     const queued = Number(m.queued_turn_count) || 0;
-    if (m.subtype === "success" && !m.is_error && !hadError) {
+    if (budgetHit || retryHit) {
+      // turno interrumpido por la app (tope o reintentos): el aviso ya se mostró; sin el error genérico.
+      // Las herramientas que esperaban al usuario murieron con el turno: sus promesas se rechazan y una pregunta o
+      // aprobación que siga pendiente se responde como mensaje nuevo (answerQuestion/decideApproval sin resolver).
+      for (const r of lv.resolvers.values()) r.reject(new Error("El turno se interrumpió."));
+      lv.resolvers.clear();
       const cur = prodOf(pid);
-      if (cur && !cur.pending && queued === 0) setStatus(pid, "done");
+      if (cur && budgetHit && cur.pending?.type !== "budget") {
+        // una pregunta o aprobación se coló durante la interrupción: el aviso de tope manda (la pregunta no gasta ronda)
+        const cap = capOf(cur);
+        const spent = spentOf(cur);
+        if (cap > 0 && spent >= cap) {
+          refundQuestion(cur);
+          const data = budgetData(cap, spent);
+          cur.pending = { type: "budget", data };
+          event(pid, { type: "status", text: budgetText(cap, spent), data }, true);
+        }
+      }
+      if (cur?.pending) { if (cur.status !== "waiting") setStatus(pid, "waiting"); else touch(pid); }
+      // con un mensaje del usuario en cola el SDK corre ese turno igual: la producción sigue "running", no "error"
+      else if (retryHit && cur && queued === 0) setStatus(pid, "error");
+      else touch(pid);
+    } else if (m.subtype === "success" && !m.is_error && !hadError) {
+      const cur = prodOf(pid);
+      if (cur && !cur.pending && queued === 0) {
+        setStatus(pid, "done");
+        // terminó en la última etapa con un render final: se cierra para el historial de tiempos
+        const p = getProject(pid);
+        const pr = cur.progress;
+        if (p && pr && pr.current === pr.stages.length - 1 && (cur.renders || []).some((r) => r.mode === "final")) {
+          const mode = modeOfProd(p, cur);
+          // una sola muestra por producción: un seguimiento reabre la etapa y su cierre traería el tiempo acumulado
+          closeCurrent(pr, Date.now(), cur.finalSampled ? undefined : (k, ms) => { recordSample(mode, k, ms); cur.finalSampled = true; });
+          refreshEta(pr, mode, Date.now());
+          persist(true);
+        }
+      }
     } else {
       const errs = "errors" in m && Array.isArray(m.errors) ? m.errors.join(" · ") : "";
       const sandboxFail = /sandbox/i.test(errs) || ("startup_failure_reason" in m && Boolean(m.startup_failure_reason) && /sandbox/i.test(lv.stderr));
@@ -751,9 +1049,14 @@ function handleMessage(pid: string, lv: Live, m: SDKMessage, dir: string): void 
       if (!hadError) event(pid, { type: "error", text: sandboxFail ? why : `${why} Escribe un mensaje para continuar.` }, true);
       if (queued === 0 || sandboxFail) setStatus(pid, "error");
     }
+    // con el costo real ya contado: aviso del 80 % y, si se llegó al tope, el pendiente "budget" (aunque el turno ya
+    // haya terminado); solo si viene otro turno en cola hace falta interrumpir
+    checkCap(pid, lv, true, queued > 0);
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
     const cur = prodOf(pid);
-    if (!lv.input.closed && queued === 0 && !cur?.pending) lv.idle = setTimeout(() => lv.input.close(), IDLE_CLOSE_MS);
+    // sin una herramienta viva esperando (tope pendiente, pregunta de un turno interrumpido) el agente no espera nada:
+    // la sesión se cierra por inactividad y se reanuda con la respuesta
+    if (!lv.input.closed && queued === 0 && (!cur?.pending || !lv.resolvers.has(cur.pending.data.id))) lv.idle = setTimeout(() => lv.input.close(), IDLE_CLOSE_MS);
   }
 }
 
@@ -923,7 +1226,11 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
   if (prev && !prev.stopped) throw new Error("El productor está terminando la sesión anterior. Reintenta en unos segundos.");
   try { ensureLinks(dir); } catch {}
 
-  const lv: Live = { abort: new AbortController(), q: null, input: new InputQueue(), resolvers: new Map(), idle: null, stderr: "", stopped: false, turnError: false };
+  const lv: Live = {
+    abort: new AbortController(), q: null, input: new InputQueue(), resolvers: new Map(), idle: null, stderr: "", stopped: false, turnError: false,
+    msgCost: new Map(), toolNames: new Map(), toolBatch: new Map(), errStreak: new Map(), errBatch: new Map(), turnErrors: 0, budgetHit: false, retryHit: false,
+    fresh: true,
+  };
   live.set(pid, lv);
   prod.status = "running";
   touch(pid);
@@ -935,12 +1242,26 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
     emit: (ev) => event(pid, ev, ev.type === "media"),
     waitForUser: (action: PendingAction) => new Promise<unknown>((resolve, reject) => {
       const cur = prodOf(pid);
-      if (!cur || lv.stopped) return reject(new Error("La producción se detuvo."));
+      // nunca se pisa un aviso de tope (la herramienta pudo arrancar mientras se interrumpía el turno) ni una
+      // pregunta/aprobación que una herramienta viva sigue esperando; una pendiente vieja sin herramienta sí se reemplaza
+      const pend = cur?.pending;
+      const why = !cur || lv.stopped ? "La producción se detuvo."
+        // budgetHit solo cuenta si el tope sigue alcanzado (tras subirlo, la marca vieja espera al próximo resultado)
+        : pend?.type === "budget" || (lv.budgetHit && capOf(cur) > 0 && spentOf(cur) >= capOf(cur)) ? "El productor está en pausa por el tope de costo de este video: no preguntes ni pidas aprobación ahora; espera a que el usuario suba el tope."
+        : pend && lv.resolvers.has(pend.data.id) ? "Ya hay otra pregunta o aprobación esperando al usuario: espera su respuesta antes de hacer otra."
+        : "";
+      if (why || !cur) {
+        // la ronda de esta pregunta no se usó (useQuestionRound ya la había contado)
+        if (cur && action.type === "question" && (cur.questionRounds || 0) > 0) { cur.questionRounds = (cur.questionRounds || 0) - 1; persist(true); }
+        return reject(new Error(why || "La producción se detuvo."));
+      }
+      if (pend) refundQuestion(cur); // la pendiente vieja se descarta sin respuesta
       lv.resolvers.set(action.data.id, { resolve, reject });
       cur.pending = action;
       cur.status = "waiting";
       if (action.type === "question") event(pid, { type: "question", text: action.data.questions.map((q) => q.question).join(" · "), data: action.data }, true);
-      else event(pid, { type: "approval", text: `${action.data.title}`, media: action.data.media, data: action.data }, true);
+      else if (action.type === "approval") event(pid, { type: "approval", text: `${action.data.title}`, media: action.data.media, data: action.data }, true);
+      else event(pid, { type: "status", text: budgetText(action.data.capUsd, action.data.spentUsd), data: action.data }, true);
     }),
     addRenders: (outs) => {
       const cur = prodOf(pid);
@@ -948,6 +1269,24 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
       cur.renders = [...(cur.renders || []), ...outs];
       touch(pid);
       persist(true);
+    },
+    setStage: (key, note) => {
+      if (!advanceStage(pid, key) || !note) return;
+      event(pid, { type: "status", text: `${stageLabel(mode, key)}: ${note}` });
+    },
+    questionBudget: () => {
+      const cur = prodOf(pid);
+      return { used: cur?.questionRounds || 0, max: cur?.maxQuestionRounds ?? MAX_QUESTION_ROUNDS[mode] };
+    },
+    useQuestionRound: () => {
+      const cur = prodOf(pid);
+      if (!cur) return false;
+      const used = cur.questionRounds || 0;
+      const max = cur.maxQuestionRounds ?? MAX_QUESTION_ROUNDS[mode];
+      if (used >= max) return false;
+      cur.questionRounds = used + 1;
+      persist(true);
+      return true;
     },
   };
 
@@ -997,6 +1336,7 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
   void (async () => {
     try {
       for await (const m of q) {
+        if (lv.stopped) break; // detenida: lo que llegue después ya no se contabiliza (stopProduction lo cerró)
         handleMessage(pid, lv, m, dir);
         if (lv.stopped) break;
       }
@@ -1014,6 +1354,8 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
       lv.input.close();
       if (live.get(pid) === lv) live.delete(pid);
       const cur = prodOf(pid);
+      // sin el resultado del turno el costo en vivo no se concilia: pasa a provisional (nunca queda liveUsd colgado)
+      if (cur && !lv.stopped) settleLiveCost(pid, cur);
       if (cur && !lv.stopped && cur.status === "running") {
         // terminó sin resultado (proceso cerrado): se puede reanudar con un mensaje
         event(pid, { type: "status", text: "La sesión del productor se cerró. Escribe un mensaje para reanudarla." });
@@ -1027,6 +1369,9 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
 
 function resumeWith(p: Project, text: string): void {
   const prod = p.production as ProdX;
+  // reanudar con un mensaje, una respuesta o al subir el tope: la barra existe y coincide con el modo
+  // (producciones guardadas antes de la barra de progreso, o tras un cambio de modo)
+  prepareProgress(prod, prod.mode || modeOf(p), false, false);
   if (prod.sessionId) launch(p, `${resumeNote()}\n\n${text}`, prod.sessionId);
   else launch(p, `${buildKickoff(p, prod.mode || modeOf(p))}\n\n${text}`);
 }
@@ -1051,8 +1396,33 @@ function syncStyle(p: Project, prod: ProdX, dir: string, restyle: boolean): stri
     : "El usuario quitó el estilo del proyecto: ignora la guía anterior de docs/style/ y define el estilo con él.";
 }
 
-export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean; flags?: unknown }): void {
+/** Etapas, reloj y rondas de preguntas al iniciar o reanudar: se reinician en una sesión nueva, al cambiar de modo o de estilo. */
+function prepareProgress(prod: ProdX, mode: ProductionMode, fresh: boolean, reset: boolean): void {
+  if (fresh) prod.questionRounds = 0;
+  else if (prod.questionRounds === undefined) prod.questionRounds = 0;
+  if (fresh || prod.maxQuestionRounds === undefined || reset) prod.maxQuestionRounds = MAX_QUESTION_ROUNDS[mode];
+  if (!prod.progress || !sameStages(prod.progress, mode) || reset) {
+    const now = Date.now();
+    prod.progress = initProgress(mode);
+    prod.finalSampled = false;
+    // una sesión nueva arranca por la primera etapa; una que se reanuda (con sessionId) puede ir mucho más adelante:
+    // queda en -1 hasta que el agente (progress) o la inferencia por herramientas marquen la etapa real
+    if (!prod.sessionId) startStage(prod.progress, prod.progress.stages[0].key, now);
+    refreshEta(prod.progress, mode, now);
+  }
+}
+
+/** Valida el tope que llega del cliente (US$ >= 0; 0 = el de Ajustes). */
+function parseCap(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < 0 || v > 10_000) throw new Error("El tope de costo debe ser un número en US$ mayor o igual a 0 (0 = el de Ajustes).");
+  return Math.round(v * 100) / 100;
+}
+
+export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean; flags?: unknown; capUsd?: number }): void {
   anthropicKey(); // error claro en español antes de tocar nada
+  const capUsd = parseCap(opts.capUsd);
   const env = motionEnv();
   if (!env.python) throw new Error(env.issues.find((i) => /pyenv\.sh/.test(i)) || 'Falta el entorno de Python del motor: ejecuta "sh motion/scripts/pyenv.sh" (necesita Python 3.12).');
   const existing = p.production as ProdX | null | undefined;
@@ -1061,13 +1431,21 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
   const now = new Date().toISOString();
 
   const lv = live.get(p.id);
+  // tope de costo: no se lanza ni se reanuda pasado el tope (salvo que este inicio traiga uno mayor). Se revisa recién
+  // después de confirmar que este inicio procede, para que un pedido repetido no deje un aviso con un tope sin guardar
   if (lv) {
     assertNotClosing(lv);
-    if (!existing || existing.status === "running" || existing.status === "waiting" || existing.pending) throw new Error("La producción de este proyecto ya está en marcha.");
+    // un aviso de tope pendiente no bloquea: este inicio puede traer un tope mayor (guardCap lo descarta o lo mantiene)
+    const budgetOnly = existing?.pending?.type === "budget";
+    if (!existing || existing.status === "running" || (!budgetOnly && (existing.status === "waiting" || existing.pending))) throw new Error("La producción de este proyecto ya está en marcha.");
+    guardCap(p, capUsd);
     // sesión viva e inactiva (turno terminado): el pedido entra por la cola de mensajes, sin lanzar otro proceso
     try { ensureLinks(existing.dir); } catch {}
     const note = syncStyle(p, existing, existing.dir, Boolean(opts.restyle));
     if (flags) existing.flags = flags;
+    if (capUsd !== undefined) existing.capUsd = capUsd;
+    prepareProgress(existing, existing.mode || modeOf(p), false, Boolean(opts.restyle));
+    resetRetries(lv);
     const text = [note, flagsText(p, flags), brief].filter(Boolean).join("\n\n") || "Continúa la producción desde donde quedaste.";
     p.updatedAt = now;
     if (brief) event(p.id, { type: "user", text: brief });
@@ -1078,6 +1456,7 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     return;
   }
 
+  if (existing) guardCap(p, capUsd);
   const reuse = Boolean(existing?.dir && isScaffolded(existing.dir));
   const dir = reuse ? existing!.dir : scaffoldMotion(p, { style: findStyle(p.styleId) });
   try { ensureLinks(dir); } catch {}
@@ -1085,17 +1464,22 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
   const mode: ProductionMode = existing?.mode && existing.sessionId && !opts.changeMode ? existing.mode : opts.mode || existing?.mode || modeOf(p);
   let prod: ProdX;
   let note = "";
+  const fresh = !existing;
   if (existing) {
     prod = existing;
     prod.dir = dir;
-    prod.pending = null; // si quedaba una pregunta de una sesión anterior, el agente la volverá a hacer
+    refundQuestion(prod); // si quedaba una pregunta de una sesión anterior, el agente la volverá a hacer (sin gastar otra ronda)
+    prod.pending = null;
     note = reuse ? syncStyle(p, prod, dir, Boolean(opts.restyle)) : ((prod.styleId = p.styleId || null), "");
   } else {
     prod = { dir, status: "running", sessionId: null, pending: null, events: [], renders: [], costUsd: 0, startedAt: now, styleId: p.styleId || null };
     p.production = prod;
   }
+  const modeChanged = Boolean(existing?.mode && existing.mode !== mode);
   prod.mode = mode;
   if (flags) prod.flags = flags;
+  if (capUsd !== undefined) prod.capUsd = capUsd;
+  prepareProgress(prod, mode, fresh, !prod.sessionId || modeChanged || Boolean(opts.changeMode) || Boolean(opts.restyle));
   p.updatedAt = now;
   if (brief) event(p.id, { type: "user", text: brief });
   if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
@@ -1112,11 +1496,21 @@ export function sendMessage(p: Project, text: string): void {
   const lv = live.get(p.id);
   assertNotClosing(lv);
   if (!lv) anthropicKey();
+  const prod = p.production as ProdX;
+  const pend = prod.pending;
+  const toolWaiting = Boolean(lv && pend && lv.resolvers.has(pend.data.id));
+  if (!toolWaiting) {
+    guardCap(p);
+    // una pregunta/aprobación que ninguna herramienta viva espera (reinicio, turno interrumpido): el mensaje del
+    // usuario la reemplaza; si el agente la necesita, la vuelve a hacer sin gastar otra ronda
+    if (prod.pending && prod.pending.type !== "budget") { refundQuestion(prod); prod.pending = null; }
+  }
   event(p.id, { type: "user", text: t }, true);
   if (lv) {
+    resetRetries(lv); // el usuario escribió: los reintentos vuelven a empezar
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
     lv.input.push(t);
-    if (p.production.status !== "waiting") setStatus(p.id, "running");
+    if (!toolWaiting) setStatus(p.id, "running");
   } else resumeWith(p, t);
 }
 
@@ -1132,13 +1526,14 @@ export function answerQuestion(p: Project, questionId: string, answers: Record<s
   const r = lv?.resolvers.get(questionId);
   if (!r) assertNotClosing(lv);
   if (!r && !lv) anthropicKey();
+  if (!r) guardCap(p); // sin herramienta esperando se reanuda la sesión: no pasado el tope
   prod.pending = null;
   prod.status = "running";
   event(p.id, { type: "answer", text: lines.join("\n"), data: clean }, true);
   if (lv?.idle) { clearTimeout(lv.idle); lv.idle = null; }
   if (r && lv) { lv.resolvers.delete(questionId); r.resolve(clean); return; }
   const text = `Respuestas a tus preguntas:\n${lines.map((l) => `- ${l}`).join("\n")}`;
-  if (lv) lv.input.push(text);
+  if (lv) { resetRetries(lv); lv.input.push(text); } // entra como turno nuevo: los reintentos vuelven a empezar
   else resumeWith(p, text);
 }
 
@@ -1152,6 +1547,7 @@ export function decideApproval(p: Project, approvalId: string, approved: boolean
   const r = lv?.resolvers.get(approvalId);
   if (!r) assertNotClosing(lv);
   if (!r && !lv) anthropicKey();
+  if (!r) guardCap(p);
   prod.pending = null;
   prod.status = "running";
   const decision: ApprovalDecision = { approved: Boolean(approved), ...(fb ? { feedback: fb } : {}) };
@@ -1161,8 +1557,38 @@ export function decideApproval(p: Project, approvalId: string, approved: boolean
   const text = approved
     ? `El usuario APROBÓ "${pend.data.title}" (${pend.data.kind}).${fb ? ` Comentario: ${fb}` : ""} Continúa.`
     : `El usuario NO aprobó "${pend.data.title}" (${pend.data.kind}). Cambios pedidos: ${fb}. Aplícalos y vuelve a pedir aprobación.`;
-  if (lv) lv.input.push(text);
+  if (lv) { resetRetries(lv); lv.input.push(text); } // entra como turno nuevo: los reintentos vuelven a empezar
   else resumeWith(p, text);
+}
+
+/**
+ * Respuesta al aviso de tope: `raiseTo` (mayor a lo gastado) sube el tope de este video y reanuda al productor;
+ * `stop` detiene la producción. Error si ese aviso ya no está pendiente.
+ */
+export function resolveBudget(p: Project, budgetId: string, opts: { raiseTo?: number; stop?: boolean }): void {
+  const prod = p.production as ProdX | null | undefined;
+  const pend = prod?.pending;
+  if (!prod || !pend || pend.type !== "budget" || pend.data.id !== budgetId) throw new Error("Ese aviso de tope ya no está pendiente.");
+  if (opts.stop) { stopProduction(p); return; }
+  const spent = spentOf(prod);
+  const raise = Number(opts.raiseTo);
+  if (!Number.isFinite(raise) || raise > 10_000) throw new Error("Indica el nuevo tope en US$.");
+  if (raise <= spent) throw new Error(`El nuevo tope debe ser mayor a lo que llevas (US$${spent.toFixed(2)}).`);
+  const lv = live.get(p.id);
+  if (lv) assertNotClosing(lv);
+  else anthropicKey();
+  const cap = Math.round(raise * 100) / 100;
+  prod.capUsd = cap;
+  prod.capWarned = undefined;
+  prod.pending = null;
+  prod.status = "running";
+  event(p.id, { type: "status", text: `Tope subido a US$${usd(cap)} para este video. El productor continúa.` }, true);
+  const text = `Continúa donde quedaste; el usuario subió el tope a US$${usd(cap)}.`;
+  if (lv) {
+    resetRetries(lv);
+    if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
+    lv.input.push(text);
+  } else resumeWith(p, text);
 }
 
 /**
@@ -1181,8 +1607,10 @@ export function stopProduction(p: Project): void {
     try { lv.q?.close(); } catch {}
     live.delete(p.id);
   }
-  const prod = p.production;
+  const prod = p.production as ProdX | null | undefined;
   if (!prod) return;
+  settleLiveCost(p.id, prod); // el turno cortado no trae resultado: su costo en vivo pasa a provisional
+  refundQuestion(prod); // una pregunta sin responder no gasta su ronda
   prod.pending = null;
   prod.status = "idle";
   event(p.id, { type: "status", text: "Producción detenida. Escribe un mensaje para reanudarla." }, true);
@@ -1197,6 +1625,14 @@ export function recoverProductions(): void {
   for (const p of load().projects) {
     const prod = p.production;
     if (!prod || live.has(p.id)) continue;
+    // el turno que corría al apagarse no trajo resultado: su costo en vivo pasa a provisional
+    if (settleLiveCost(p.id, prod as ProdX)) changed = true;
+    // el reloj no corre mientras la app estuvo apagada: se pausa en el último cambio guardado
+    if (prod.progress?.runningSince) {
+      const at = Date.parse(prod.updatedAt || "") || Date.now();
+      pauseClock(prod.progress, Math.max(at, Date.parse(prod.progress.runningSince) || 0));
+      changed = true;
+    }
     if (prod.status === "running") {
       prod.status = "error";
       prod.events = prod.events || [];

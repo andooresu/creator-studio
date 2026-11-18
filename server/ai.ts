@@ -35,7 +35,8 @@ export function priceTable(): Record<string, ModelPrice> {
   return t;
 }
 
-function priceFor(model: string): ModelPrice {
+/** Precio por millón de tokens de un modelo (tabla + precios propios; prefijo para ids con fecha). */
+export function priceFor(model: string): ModelPrice {
   const t = priceTable();
   if (t[model]) return t[model];
   const base = Object.keys(t).find((k) => model.startsWith(k)); // ej. gpt-5-2025-08-07
