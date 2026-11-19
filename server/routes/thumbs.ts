@@ -1,6 +1,6 @@
 // Miniaturas de proyecto para Inicio. server/index.ts monta: app.use(thumbsRouter)
 // GET /api/projects/:id/thumb → JPEG cacheado en data/projects/<id>/thumb.jpg (~360 px de ancho), sacado con ffmpeg
-// del mejor video disponible: el render más reciente del motor (final antes que borrador, 9x16 antes que otros formatos),
+// del mejor video disponible: el video aprobado en Edición (finalVideo), si no el render más reciente del motor (final antes que borrador, 9x16 antes que otros formatos),
 // si no el video editado/cortado, si no la grabación. Solo usa renders terminados (nombres conocidos y sin escribirse
 // en los últimos segundos). La caché se identifica por la fuente (thumb.json = {file, mtimeMs}): si cambia el archivo
 // o su fecha (aunque sea a una más vieja), se regenera. Si ffmpeg falla y ya hay una miniatura, se sigue sirviendo.
@@ -42,6 +42,12 @@ const inside = (dir: string, rel: string): string | null => {
 export function thumbSource(p: Project): ThumbSource | null {
   if (!ID_RE.test(p.id)) return null;
   const dir = path.join(PROJECTS_DIR, p.id);
+  // 0) El video aprobado en Edición (finalVideo: ruta relativa a la carpeta del proyecto)
+  if (p.finalVideo?.path) {
+    const file = inside(dir, p.finalVideo.path);
+    const s = file ? statSettled(file) : null;
+    if (file && s) return { file, mtimeMs: s.mtimeMs };
+  }
   // 1) Renders del motor de video
   const rdir = path.join(dir, "motion", "renders");
   let best: { file: string; mtimeMs: number; rank: number } | null = null;

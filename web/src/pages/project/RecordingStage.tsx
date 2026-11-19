@@ -1,4 +1,4 @@
-// 4. Grabación: recomendaciones, checklist (guardado por proyecto en localStorage),
+// 2. Grabación: recomendaciones, checklist (guardado por proyecto en localStorage),
 // teleprompter y carga de la grabación (subida o desde la carpeta de crudos). Al cargarla, el servidor lanza
 // la propuesta visual y ProjectView lleva la vista a Concepto para ver el progreso.
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
@@ -53,7 +53,7 @@ export function RecordingStage({ p, running, run, setProject, goStage }: StagePr
       <div className="card">
         <h3>Aún no hay plan de grabación</h3>
         <p className="muted">Cuando apruebes el guion, aquí verás cómo grabar, el checklist y el teleprompter.</p>
-        <Button className="mt-3" onClick={() => goStage("guion")}>Ir a Guion<ArrowRight aria-hidden /></Button>
+        <Button className="mt-3" onClick={() => goStage("idea")}>Ir a Idea y guion<ArrowRight aria-hidden /></Button>
       </div>
     );
   }
@@ -112,7 +112,7 @@ export function RecordingStage({ p, running, run, setProject, goStage }: StagePr
               ? <><p><Tag tone="g">Cargado</Tag> {p.recording.name}</p><video key={p.recording.at} className="video-9x16" src={`/api/projects/${p.id}/recording/video`} controls preload="metadata" /></>
               : <p className="muted">Sube el video grabado o elígelo de tu carpeta de crudos (Ajustes).</p>}
             <div className="mt-2.5">
-              <Button variant={p.recording ? "secondary" : "default"} onClick={() => fileRef.current?.click()}><Upload aria-hidden />{p.recording ? "Reemplazar video" : "Subir video"}</Button>
+              <Button variant={p.recording ? "secondary" : "default"} disabled={running} title={running ? "Espera a que termine el proceso en curso" : undefined} onClick={() => fileRef.current?.click()}><Upload aria-hidden />{p.recording ? "Reemplazar video" : "Subir video"}</Button>
               <input ref={fileRef} type="file" accept="video/*" hidden aria-label="Archivo de la grabación" onChange={(e) => { void onFile(e); }} />
             </div>
             <label htmlFor="rec-raw">O elegir de tu carpeta de crudos <span className="small muted">({state?.rawDir || ""} · cámbiala en Ajustes)</span></label>
@@ -123,7 +123,7 @@ export function RecordingStage({ p, running, run, setProject, goStage }: StagePr
                   ? raws.map((r) => <option key={r.path} value={r.path}>{r.name} · {(r.size / 1e6).toFixed(0)} MB</option>)
                   : <option value="">(no hay videos en esa carpeta)</option>}
             </select>
-            <Button variant="secondary" className="mt-2" disabled={!rawSel} onClick={() => void pickRaw()}>Usar este archivo</Button>
+            <Button variant="secondary" className="mt-2" disabled={!rawSel || running} onClick={() => void pickRaw()}>Usar este archivo</Button>
           </div>
           {p.recording ? (
             // Al cargar la grabación el servidor lanza solo la propuesta visual: aquí solo se ve en qué va.

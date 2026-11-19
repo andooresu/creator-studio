@@ -18,13 +18,15 @@ import { audioRouter } from "./routes/audio.ts";
 import { thumbsRouter, thumbUrl as projectThumbUrl } from "./routes/thumbs.ts";
 import { audioEnv, sayVoices } from "./audio/env.ts";
 import { motionEnv, killMotion } from "./motion/kit.ts";
-import { recoverProductions, stopProduction } from "./agent/runner.ts";
+import { recoverProductions, stopProduction, startProduction, productionPreflight, currentRenders, resetProductionForNewRecording, approveFinalFromEdit, capReached } from "./agent/runner.ts";
+import { parseStartFlags } from "./agent/prompt.ts";
 import { sweepPreviewTmp } from "./styles/preview.ts";
 import { eventsHandler } from "./events.ts";
-import { styleSummaries, getStyle, markUsed } from "./styles/store.ts";
+import { styleSummaries, getStyle, markUsed, listStyles } from "./styles/store.ts";
 import type {
   AppState, Brand, BrandGen, BrandSource, BrandsResponse, Effort, InspoAccount, InspoCollection, InspoResponse, InspoVideo,
   AudioProvider, Jobbable, Platform, Project, ProjectKind, Provider, PublicSettings, RawFile, Settings, SettingsUpdate, AiStage, ModelPrice,
+  EditRun, EditRunRequest, FinalVideo, Reference, Style,
 } from "../shared/types.ts";
 
 const PORT = Number(process.env.PORT || 4747);
@@ -141,7 +143,7 @@ const publicSettings = (): PublicSettings => {
 // ---------- Estado general ----------
 /** Ya existe un video terminado (sin tocar disco): render final del motor, o edición final / publicación en talking. */
 const projectHasVideo = (p: Project): boolean =>
-  !!p.production?.renders?.some((r) => r.mode === "final") || !!p.edit?.final || p.stage === "publicacion" || p.stage === "publicado" || !!p.published;
+  !!p.finalVideo || !!p.production?.renders?.some((r) => r.mode === "final") || !!p.edit?.final || p.stage === "publicacion" || p.stage === "publicado" || !!p.published;
 // Revisar herramientas lanza procesos (which, ffmpeg -filters…) y bloquea el servidor: con actualizaciones en vivo
 // /api/state se pide más seguido, así que el resultado se reutiliza unos segundos (o hasta que cambien los ajustes).
 let envCache: { at: number; key: string; v: Pick<AppState, "tools" | "motion" | "audio"> } | null = null;
@@ -152,6 +154,7 @@ function envNow(): Pick<AppState, "tools" | "motion" | "audio"> {
 }
 app.get("/api/state", wrap(async (_req, res) => {
   const db = load();
+  if (db.projects.map(syncEditRun).some(Boolean)) save();
   const env = envNow();
   const out: AppState = {
     stages: STAGES,
@@ -251,18 +254,48 @@ app.put("/api/settings", wrap((req, res) => {
 }));
 
 // ---------- Proyectos ----------
+/** Primera plantilla para videos a cámara: la primera de tipo "talking", si no la primera "any" (null si no hay). */
+function defaultTalkingStyleId(): string | null {
+  const all = listStyles();
+  return (all.find((s) => s.kind === "talking") || all.find((s) => s.kind === "any"))?.id ?? null;
+}
+/** Plantilla válida para un video a cámara (tipo talking o any). */
+const isTalkingStyle = (s: Style | undefined): s is Style => !!s && (s.kind === "talking" || s.kind === "any");
+
+// Crea el proyecto en una sola petición (diálogo de una pantalla y «Desde un link» de Inicio): con sus links de referencia
+// (validados ANTES de crear nada: un link inválido no deja un proyecto huérfano) y, si se pide (autoScript) y hay clave de
+// IA, arranca de una vez «Analizar y escribir guion». Sin clave se crea igual, sin trabajo (la interfaz ofrece el botón).
 app.post("/api/projects", wrap((req, res) => {
-  const kind: ProjectKind = oneOf(["talking", "reel", "clase"] as ProjectKind[], req.body.kind) ? req.body.kind : "talking";
-  const styleId: string | null = typeof req.body.styleId === "string" && req.body.styleId && getStyle(req.body.styleId) ? req.body.styleId : null;
-  const p: Project = { id: id(), title: req.body.title || "Nuevo reel", goal: req.body.goal || "", brandId: req.body.brandId || load().settings.defaultBrandId, kind, styleId, stage: "referencias", references: [], createdAt: new Date().toISOString(), log: [] };
+  const body = (req.body || {}) as { kind?: unknown; styleId?: unknown; title?: unknown; goal?: unknown; brandId?: unknown; references?: unknown; autoScript?: unknown };
+  const kind: ProjectKind = oneOf(["talking", "reel", "clase"] as ProjectKind[], body.kind) ? body.kind : "talking";
+  let styleId: string | null = typeof body.styleId === "string" && body.styleId && getStyle(body.styleId) ? body.styleId : null;
+  // «Sin plantilla» explícito del diálogo llega como "" y se respeta; ausente, null o desconocido → plantilla por defecto
+  if (kind === "talking" && !styleId && body.styleId !== "") styleId = defaultTalkingStyleId();
+  let references: Reference[] = [];
+  if (body.references !== undefined && body.references !== null) {
+    if (!Array.isArray(body.references)) throw new Error("Los links de referencia deben venir como una lista.");
+    references = cleanRefLinks(linkItems(body.references), []).map((x) => ({ id: id(), url: x.url, note: x.note, addedAt: new Date().toISOString() }));
+  }
+  const goal = typeof body.goal === "string" ? body.goal : "";
+  const p: Project = {
+    id: id(), title: (typeof body.title === "string" && body.title.trim()) || "Nuevo reel", goal,
+    brandId: (typeof body.brandId === "string" && body.brandId) || load().settings.defaultBrandId,
+    kind, styleId, stage: "idea", references, createdAt: new Date().toISOString(), log: [],
+  };
   if (styleId) markUsed(styleId, p.id);
   load().projects.unshift(p);
   log(p, "Proyecto creado");
+  if (references.length) log(p, `Referencia agregada: ${references.map((r) => r.url).join(", ")}`);
   save();
+  // mismo arranque que POST /analyze; sin clave de IA (o si algo impide arrancar) el proyecto queda creado sin trabajo
+  if (body.autoScript === true && (references.length || goal.trim()) && hasKey()) {
+    try { startJob(p, "analisis", (step) => analyzeAndScript(p, step)); }
+    catch (e) { log(p, "No se pudo arrancar el guion: " + (e as Error).message); save(); }
+  }
   res.json(p);
 }));
 
-app.get("/api/projects/:id", wrap((req, res) => res.json(need(req))));
+app.get("/api/projects/:id", wrap((req, res) => { const p = need(req); if (syncEditRun(p)) save(); res.json(p); }));
 
 app.patch("/api/projects/:id", wrap((req, res) => {
   const p = need(req);
@@ -307,6 +340,31 @@ function cleanRefUrl(raw: unknown): string | null {
   } catch { return null; }
 }
 
+/** Lista de links [{ url, note }] (o strings sueltos) a items recortados. */
+function linkItems(list: unknown[]): { url: string; note: string }[] {
+  return list.map((l) => {
+    const o = (l && typeof l === "object" ? l : { url: l }) as { url?: unknown; note?: unknown };
+    return { url: String(o.url ?? "").trim(), note: String(o.note ?? "").trim() };
+  });
+}
+
+/** Valida y limpia links de referencia: solo http/https (lanza con la lista de los inválidos) y sin repetidos (ni entre sí
+ *  ni con los que ya tiene el proyecto). Los items sin url se ignoran. Devuelve los nuevos, ya normalizados. */
+function cleanRefLinks(items: { url: string; note: string }[], existing: Reference[]): { url: string; note: string }[] {
+  const withUrl = items.filter((x) => x.url);
+  const bad = withUrl.filter((x) => !cleanRefUrl(x.url));
+  if (bad.length) throw new Error(`${bad.length === 1 ? "Este link no es válido" : "Estos links no son válidos"} (usa http o https): ${bad.map((x) => x.url).join(", ")}`);
+  const seen = new Set(existing.map((r) => cleanRefUrl(r.url)).filter((u): u is string => Boolean(u)));
+  const out: { url: string; note: string }[] = [];
+  for (const x of withUrl) {
+    const url = cleanRefUrl(x.url)!;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    out.push({ url, note: x.note });
+  }
+  return out;
+}
+
 // Acepta { links: [{ url, note }] } (cada link con su nota) o la forma anterior { url | urls, note } (links separados
 // por espacios o saltos de línea, todos con la misma nota). Los links repetidos (ya en el proyecto o en la misma
 // petición) se ignoran.
@@ -314,28 +372,19 @@ app.post("/api/projects/:id/references", wrap((req, res) => {
   const p = need(req);
   const body = (req.body || {}) as { links?: unknown; url?: unknown; urls?: unknown; note?: unknown };
   const items: { url: string; note: string }[] = [];
-  if (Array.isArray(body.links)) {
-    for (const l of body.links as unknown[]) {
-      const o = (l && typeof l === "object" ? l : { url: l }) as { url?: unknown; note?: unknown };
-      items.push({ url: String(o.url ?? "").trim(), note: String(o.note ?? "").trim() });
-    }
-  } else {
+  if (Array.isArray(body.links)) items.push(...linkItems(body.links as unknown[]));
+  else {
     const raw = [body.url, ...(Array.isArray(body.urls) ? body.urls : [body.urls])].filter((x) => x != null).map(String).join(" ");
     const note = String(body.note ?? "").trim();
     for (const url of raw.split(/\s+/).filter(Boolean)) items.push({ url, note });
   }
   const withUrl = items.filter((x) => x.url);
   if (!withUrl.length) throw new Error("Pega al menos un link");
-  const bad = withUrl.filter((x) => !cleanRefUrl(x.url));
-  if (bad.length) throw new Error(`${bad.length === 1 ? "Este link no es válido" : "Estos links no son válidos"} (usa http o https): ${bad.map((x) => x.url).join(", ")}`);
-  const seen = new Set(p.references.map((r) => cleanRefUrl(r.url)).filter((u): u is string => Boolean(u)));
+  const fresh = cleanRefLinks(withUrl, p.references);
   const added: string[] = [];
-  for (const x of withUrl) {
-    const url = cleanRefUrl(x.url)!;
-    if (seen.has(url)) continue;
-    seen.add(url);
-    p.references.push({ id: id(), url, note: x.note, addedAt: new Date().toISOString() });
-    added.push(url);
+  for (const x of fresh) {
+    p.references.push({ id: id(), url: x.url, note: x.note, addedAt: new Date().toISOString() });
+    added.push(x.url);
   }
   if (!added.length) throw new Error(withUrl.length === 1 ? "Ese link ya está en tus referencias" : "Esos links ya están en tus referencias");
   log(p, `Referencia agregada: ${added.join(", ")}`);
@@ -371,7 +420,7 @@ app.post("/api/projects/:id/analyze", wrap((req, res) => {
   const p = need(req);
   if (!p.references.length && !p.goal?.trim()) throw new Error("Agrega al menos una referencia o escribe el objetivo del video");
   startJob(p, "analisis", (step) => analyzeAndScript(p, step)); // si falla (ej. sin API key) la etapa no cambia
-  p.stage = "analisis";
+  p.stage = "idea";
   res.json(p);
 }));
 
@@ -396,16 +445,237 @@ app.put("/api/projects/:id/script", wrap((req, res) => {
   res.json(p);
 }));
 
+// ---------- Camino de edición por defecto (entrega 3): tomas → corte → plantilla ----------
+const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Valida el pedido de edición (plantilla, tope y opciones) y deja listo el EditRun; lanza en español si algo falta. */
+function parseEditRun(p: Project, raw: unknown): { quick: boolean; styleId: string | null; flags: EditRun["flags"]; capUsd?: number } {
+  const b = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as EditRunRequest & Record<string, unknown>;
+  const quick = b.quick === true;
+  let styleId: string | null;
+  if (b.styleId === null || b.styleId === "") styleId = null;
+  else if (b.styleId !== undefined) {
+    if (typeof b.styleId !== "string" || !isTalkingStyle(getStyle(b.styleId))) throw new Error("Esa plantilla no existe o no es para videos a cámara.");
+    styleId = b.styleId;
+  } else styleId = p.styleId && isTalkingStyle(getStyle(p.styleId)) ? p.styleId : defaultTalkingStyleId();
+  let capUsd: number | undefined;
+  const capRaw: unknown = b.capUsd;
+  if (capRaw !== undefined && capRaw !== null) {
+    // mismo rango que el productor (runner parseCap): se rechaza aquí, antes de gastar en la selección de tomas
+    if (typeof capRaw !== "number" || !Number.isFinite(capRaw) || capRaw < 0 || capRaw > 10_000) throw new Error("El tope de costo debe ser un número en US$ entre 0 y 10.000 (0 = el de Ajustes).");
+    capUsd = Math.round(capRaw * 100) / 100;
+  }
+  const flags = parseStartFlags(b.flags);
+  return { quick, styleId, flags, ...(capUsd !== undefined ? { capUsd } : {}) };
+}
+
+const hasWhisper = (): boolean => { const t = tools(); return Boolean(t.whisperCpp || t.whisperPy); };
+
+/** Arranca el camino por defecto: un solo trabajo "edicion" (tomas con IA si se puede + corte con ffmpeg) y, al terminar
+ *  bien y sin quick, el productor con la plantilla (fuera del trabajo, cuando ya quedó "done"). Lanza antes de tocar nada
+ *  si falta algo (grabación, propuesta aprobada, plantilla, tope, clave o entorno del motor, otro proceso corriendo). */
+function startEditRun(p: Project, raw: unknown): void {
+  if (!p.recording) throw new Error("Primero carga tu grabación.");
+  if (!p.conceptApproved) throw new Error("Aprueba la propuesta visual antes de editar.");
+  const req = parseEditRun(p, raw);
+  if (p.job?.status === "running") throw new Error("Ya hay un proceso corriendo en este proyecto.");
+  if (!req.quick) {
+    productionPreflight(); // clave de Anthropic y entorno de Python del motor: mismos errores que startProduction
+    if (producerWorking(p)) throw new Error("La producción de este proyecto ya está en marcha.");
+    // el tope se revisa antes de la selección de tomas (paga): si no, se gastaría en ella y el productor no arrancaría
+    const capErr = capReached(p, req.capUsd);
+    if (capErr) throw new Error(capErr);
+  }
+  const startedAt = new Date().toISOString();
+  const run: EditRun = { quick: req.quick, styleId: req.styleId, ...(req.flags ? { flags: req.flags } : {}), ...(req.capUsd !== undefined ? { capUsd: req.capUsd } : {}), state: "corte", startedAt };
+  const prevStyle = p.styleId ?? null;
+  p.styleId = req.styleId;
+  if (req.styleId) markUsed(req.styleId, p.id);
+  p.finalVideo = null;
+  p.editApproved = false;
+  if (p.stage === "publicacion" || p.stage === "publicado") p.stage = "edicion"; // el video aprobado dejó de valer
+  p.editRun = run;
+  p.updatedAt = startedAt;
+  const pid = p.id;
+  try {
+    startJob(p, "edicion", async (step) => {
+      try {
+        // sin clave de IA (o sin whisper) no se eligen tomas: solo corte de silencios (gratis)
+        if (hasWhisper() && hasKey() && !p.editPlan) {
+          try { await planTakes(p, step); }
+          catch (e) { step(`No pude elegir las tomas (${errText(e).slice(0, 160)}). Sigo con el corte de silencios.`); }
+        }
+        await runEdit(p, step);
+      } catch (e) {
+        if (p.editRun?.startedAt === startedAt) { p.editRun.state = "error"; p.editRun.error = errText(e); }
+        throw e;
+      }
+      // el productor arranca cuando el trabajo ya quedó "done" (startJob lo marca justo después de esta promesa)
+      setImmediate(() => afterEditJob(pid, startedAt));
+    });
+  } catch (e) {
+    // no arrancó: se deshace el pedido
+    p.editRun = null;
+    p.styleId = prevStyle;
+    save();
+    throw e;
+  }
+  log(p, run.quick ? "Edición: corte rápido" : `Edición con plantilla${run.styleId ? ` «${getStyle(run.styleId)?.name || run.styleId}»` : ""}`);
+  save();
+}
+
+/** Continuación del trabajo de corte: quick → listo; si no, lanza el productor con la plantilla. */
+function afterEditJob(pid: string, startedAt: string): void {
+  const p = getProject(pid);
+  const run = p?.editRun;
+  if (!p || !run || run.startedAt !== startedAt || run.state !== "corte" || p.job?.status !== "done") return;
+  if (run.quick) { run.state = "listo"; save(); return; }
+  run.state = "plantilla";
+  try {
+    const restyle = Boolean(p.production) && ((p.production as { styleId?: string | null } | null | undefined)?.styleId ?? null) !== (run.styleId ?? null);
+    // una sesión anterior ya conoce otro corte: se le avisa que hay uno nuevo y que el render final debe rehacerse
+    const notice = p.production?.sessionId
+      ? `Hay un corte nuevo de la edición automática (${p.edit?.final || p.edit?.cut || "edit/final.mp4"}, ${p.edit?.at || startedAt}): vuelve a importar la secuencia sobre ese corte, re-temporiza los subtítulos y entrega un render final nuevo. Los renders anteriores ya no sirven.`
+      : undefined;
+    startProduction(p, { mode: "talking", flags: run.flags, capUsd: run.capUsd, restyle, notice });
+    log(p, "Edición: corte listo; el productor está aplicando la plantilla");
+  } catch (e) {
+    run.state = "error";
+    run.error = errText(e);
+    log(p, "ERROR al lanzar la plantilla (el corte rápido sigue disponible): " + run.error);
+  }
+  save();
+}
+
+/** Mientras el productor aplica la plantilla: cuando termina con un render final, el EditRun pasa a "listo".
+ *  Devuelve true si cambió algo (quien llama guarda). Se revisa al leer el proyecto y con un temporizador. */
+function syncEditRun(p: Project): boolean {
+  const run = p.editRun;
+  if (!run || run.state !== "plantilla") return false;
+  const prod = p.production;
+  // solo cuenta un render final de esta corrida (no uno de un corte o una grabación anteriores)
+  if (prod?.status !== "done" || !currentRenders(p).some((r) => r.mode === "final")) return false;
+  run.state = "listo";
+  return true;
+}
+setInterval(() => { if (load().projects.map(syncEditRun).some(Boolean)) save(); }, 3000).unref();
+
+/** Ruta (relativa a la carpeta del proyecto) del render final elegido para aprobar: 9x16 primero, si no el primero.
+ *  Solo renders de la corrida actual (currentRenders): nunca uno de un corte o una grabación anteriores. */
+function finalRenderVideo(p: Project): FinalVideo | null {
+  const prod = p.production;
+  if (!prod) return null;
+  const dir = projectDir(p.id);
+  const ok = (r: { path: string }): string | null => {
+    const abs = path.resolve(prod.dir || path.join(dir, "motion"), r.path);
+    const rel = path.relative(dir, abs);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel) || !fs.existsSync(abs)) return null;
+    return rel.split(path.sep).join("/");
+  };
+  const finals = currentRenders(p).filter((r) => r.mode === "final");
+  // el más reciente de cada formato
+  const pick = [...finals].reverse().find((r) => r.fmt === "9x16" && ok(r)) || [...finals].reverse().find((r) => ok(r));
+  return pick ? { path: ok(pick)!, source: "plantilla", fmt: pick.fmt, at: new Date().toISOString() } : null;
+}
+
+/** El productor trabaja o espera al usuario. Un aviso de tope solo (sin nada corriendo) no cuenta: nada va a cambiar. */
+function producerWorking(p: Project): boolean {
+  const prod = p.production;
+  return prod?.status === "running" || (prod?.status === "waiting" && prod.pending?.type !== "budget");
+}
+
+/** Copia el render aprobado a una ruta fija (edit/aprobado-<fmt>-<fecha>.mp4): el productor reescribe sus renders en la
+ *  misma ruta, y el video aprobado (Publicación, miniaturas) no debe cambiar sin una aprobación nueva. Borra la copia
+ *  aprobada anterior. Si la copia falla, se usa el render tal cual. */
+function freezeApproved(p: Project, fv: FinalVideo): FinalVideo {
+  const dir = projectDir(p.id);
+  try {
+    const rel = `edit/aprobado-${fv.fmt}-${Date.now()}.mp4`;
+    fs.mkdirSync(path.join(dir, "edit"), { recursive: true });
+    fs.copyFileSync(path.join(dir, fv.path), path.join(dir, rel));
+    for (const f of fs.readdirSync(path.join(dir, "edit"))) {
+      if (/^aprobado-.+\.mp4$/.test(f) && `edit/${f}` !== rel) fs.rmSync(path.join(dir, "edit", f), { force: true });
+    }
+    return { ...fv, path: rel };
+  } catch (e) {
+    console.warn(`[proyecto ${p.id}] no se pudo copiar el video aprobado: ${errText(e)}`);
+    return fv;
+  }
+}
+
+/** El corte rápido (ffmpeg) para aprobar: edición final, si no el corte. */
+function quickVideo(p: Project): FinalVideo | null {
+  const rel = p.edit?.final || p.edit?.cut;
+  if (!rel || !fs.existsSync(path.join(projectDir(p.id), rel))) return null;
+  return { path: rel.split(path.sep).join("/"), source: "rapido", fmt: "9x16", at: new Date().toISOString() };
+}
+
 // Aprobaciones (puertas de control)
 app.post("/api/projects/:id/approve/:gate", wrap((req, res) => {
   const p = need(req);
   const g = req.params.gate;
+  const body = (req.body || {}) as { edit?: unknown; source?: unknown };
+  const wasConceptApproved = Boolean(p.conceptApproved);
   if (g === "script") { if (!p.script) throw new Error("No hay guion"); p.scriptApproved = true; p.stage = "grabacion"; }
   else if (g === "concept") { if (!p.concept) throw new Error("No hay propuesta"); p.conceptApproved = true; p.stage = "edicion"; }
-  else if (g === "edit") { if (!p.edit) throw new Error("No hay edición"); p.editApproved = true; p.stage = "publicacion"; }
+  else if (g === "edit") {
+    if (body.source !== undefined && body.source !== "plantilla" && body.source !== "rapido") throw new Error('Fuente inválida: usa "plantilla" o "rapido".');
+    if ((p.kind ?? "talking") === "talking" && !p.conceptApproved) throw new Error("Aprueba la propuesta visual antes de aprobar el video.");
+    if (p.job?.status === "running" && (p.job.stage === "edicion" || p.job.stage === "tomas")) throw new Error("Espera a que termine el corte.");
+    const prod = p.production;
+    const prodBusy = producerWorking(p);
+    const plantilla = finalRenderVideo(p);
+    const source = body.source ?? (plantilla && !p.editRun?.quick ? "plantilla" : "rapido");
+    let fv = source === "plantilla" ? plantilla : quickVideo(p);
+    if (!fv) throw new Error("Todavía no hay un video para aprobar.");
+    if (source === "plantilla" && prodBusy) {
+      // si el productor espera justo la aprobación del video final, «Aprobar video» cuenta como esa aprobación; si sigue
+      // trabajando, el archivo todavía puede cambiar (el render se reescribe en la misma ruta)
+      if (!approveFinalFromEdit(p)) throw new Error("El productor sigue trabajando con la plantilla: espera a que termine (o detenlo) para aprobar ese video.");
+    } else if (source === "rapido" && prodBusy) {
+      // aprobar el corte rápido deja sin uso la plantilla en curso: se detiene para que no siga gastando
+      stopProduction(p);
+      log(p, "Productor detenido: aprobaste el corte rápido");
+    } else if (prod?.pending?.type === "budget") {
+      // solo quedaba un aviso de tope (nada corriendo): aprobar un video ya hecho no gasta; el aviso se cierra
+      stopProduction(p);
+    }
+    // la corrida queda como corte rápido (es lo que se aprobó y lo que se muestra), aunque antes hubiera una plantilla
+    if (source === "rapido" && p.editRun && !p.editRun.quick) p.editRun = { ...p.editRun, quick: true, state: "listo" };
+    // el render aprobado se congela en una copia: un ajuste posterior del productor no lo reescribe
+    if (fv.source === "plantilla") fv = freezeApproved(p, fv);
+    p.finalVideo = fv;
+    p.editApproved = true; p.stage = "publicacion";
+  }
   else throw new Error("Puerta desconocida");
   log(p, `Aprobado: ${g}`);
   save();
+  // Al aprobar la propuesta con un pedido de edición, arranca el camino por defecto. Si no puede (p. ej. hay otro
+  // proceso corriendo o falta la clave), la aprobación vale igual y el error queda en editRun. Un pedido repetido
+  // (doble clic, otra pestaña) con la propuesta ya aprobada y una edición en curso o hecha no arranca otra.
+  const runActive = (): boolean => {
+    const st = p.editRun?.state;
+    const ps = p.production?.status;
+    return p.job?.status === "running" || st === "corte" || (st === "plantilla" && (ps === "running" || ps === "waiting"));
+  };
+  const repeated = wasConceptApproved && Boolean(p.editRun) && p.editRun?.state !== "error";
+  if (g === "concept" && body.edit !== undefined && body.edit !== null && !repeated) {
+    try { startEditRun(p, body.edit); }
+    catch (e) {
+      if (runActive() && p.editRun && p.editRun.state !== "error") {
+        // hay una edición en marcha: no se pisa (el pedido repetido solo se registra)
+        log(p, "Pedido de edición ignorado: ya hay una en curso");
+      } else {
+        // se guarda lo que el usuario pidió (corte rápido o plantilla) para que «Reintentar» repita eso mismo
+        let asked: { quick: boolean; styleId: string | null } | null = null;
+        try { const r = parseEditRun(p, body.edit); asked = { quick: r.quick, styleId: r.styleId }; } catch {}
+        const prev = p.editRun;
+        p.editRun = { quick: asked?.quick ?? prev?.quick ?? false, styleId: asked?.styleId ?? prev?.styleId ?? p.styleId ?? null, state: "error", error: errText(e), startedAt: new Date().toISOString() };
+        log(p, "No se pudo arrancar la edición: " + errText(e));
+      }
+      save();
+    }
+  }
   // Al aprobar la edición se prepara solo el paquete de publicación (si aún no existe).
   if (g === "edit" && !p.publish) autoStart(p, "publicacion", (step) => publishPack(p, step));
   res.json(p);
@@ -434,6 +704,9 @@ app.get("/api/raw-files", wrap((_req, res) => {
 function setRecording(p: Project, file: string, name: string): void {
   p.recording = { file, name, at: new Date().toISOString() };
   p.concept = null; p.conceptApproved = false; p.edit = null; p.editPlan = null;
+  p.editRun = null; p.finalVideo = null; p.editApproved = false;
+  // la producción anterior se hizo sobre otro video: se detiene (si trabajaba) y se olvidan su sesión y sus renders
+  try { resetProductionForNewRecording(p); } catch (e) { console.warn(`[proyecto ${p.id}] no se pudo reiniciar la producción: ${errText(e)}`); }
   try { fs.rmSync(path.join(projectDir(p.id), "recording", "words.json"), { force: true }); } catch {}
   p.stage = "concepto";
   log(p, `Grabación cargada: ${name}`);
@@ -442,6 +715,12 @@ function setRecording(p: Project, file: string, name: string): void {
 
 app.post("/api/projects/:id/recording", sub("recording"), upload.single("file"), wrap((req, res) => {
   const p = need(req);
+  // un trabajo en curso (transcripción, tomas, corte, propuesta) escribiría resultados de la grabación anterior sobre la
+  // nueva (words.json, editPlan, el corte): se cambia cuando termine
+  if (p.job?.status === "running") {
+    if (req.file) fs.rm(req.file.path, { force: true }, () => {});
+    throw new Error("Espera a que termine el proceso en curso para cambiar la grabación.");
+  }
   if (req.file) setRecording(p, req.file.path, req.file.originalname);
   else if (req.body.path) {
     const full = path.resolve(req.body.path);
@@ -498,7 +777,35 @@ app.delete("/api/projects/:id/edit-plan", wrap((req, res) => { const p = need(re
 app.post("/api/projects/:id/edit", wrap((req, res) => {
   const p = need(req);
   if (!p.conceptApproved) throw new Error("Aprueba primero la propuesta visual");
-  startJob(p, "edicion", (step) => runEdit(p, step));
+  const startedAt = new Date().toISOString();
+  const wasPlantilla = Boolean(p.editRun && !p.editRun.quick);
+  startJob(p, "edicion", async (step) => {
+    try { await runEdit(p, step); }
+    catch (e) {
+      if (p.editRun?.startedAt === startedAt) { p.editRun.state = "error"; p.editRun.error = errText(e); }
+      throw e;
+    }
+    if (p.editRun?.startedAt === startedAt) { p.editRun.state = "listo"; delete p.editRun.error; }
+  });
+  // el corte se rehace (y reescribe edit/final.mp4): el video aprobado deja de valer desde ya, no solo al terminar
+  p.finalVideo = null; p.editApproved = false;
+  if (p.stage === "publicacion" || p.stage === "publicado") p.stage = "edicion";
+  // lo que se ve y se aprueba pasa a ser este corte: un render de plantilla hecho sobre el corte anterior no lo incluye
+  // (para aplicarle la plantilla: «Producir de nuevo con plantilla»). Queda en "corte" hasta que el trabajo termine.
+  if (p.editRun) { const { error: _e, ...rest } = p.editRun; p.editRun = { ...rest, quick: true, state: "corte", startedAt }; }
+  // la plantilla en curso trabajaba sobre el corte que se está reescribiendo y ya no cuenta: se detiene para que no gaste
+  if (wasPlantilla && producerWorking(p)) {
+    stopProduction(p);
+    log(p, "Productor detenido: volviste a cortar (rápido)");
+  }
+  save();
+  res.json(p);
+}));
+
+// 6c. Camino por defecto: tomas + corte y, salvo quick, el productor con la plantilla
+app.post("/api/projects/:id/edit/auto", wrap((req, res) => {
+  const p = need(req);
+  startEditRun(p, req.body);
   res.json(p);
 }));
 

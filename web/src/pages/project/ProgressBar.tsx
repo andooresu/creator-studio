@@ -43,6 +43,11 @@ export function spentOf(prod: Production | null | undefined): { spent: number; l
   return { spent: (prod?.costUsd || 0) + live, live: live > 0 };
 }
 
+/** Gasto que cuenta contra el tope: el de la grabación actual (desde capBaseUsd), igual que el servidor. */
+export function capSpentOf(prod: Production | null | undefined): number {
+  return Math.max(0, spentOf(prod).spent - (prod?.capBaseUsd || 0));
+}
+
 export function ProgressBar({ prod, status, defaultCapUsd }: {
   prod: Production; status: ProductionStatus;
   /** tope de Ajustes (maxCostPerVideo) cuando la producción no tiene uno propio */
@@ -160,7 +165,9 @@ export function ProgressBar({ prod, status, defaultCapUsd }: {
 
 /** «≈ US$2.40 de US$15 de tope» con una barra fina; ámbar desde el 80 %. */
 export function CostMeter({ prod, status, defaultCapUsd }: { prod: Production; status: ProductionStatus; defaultCapUsd?: number }) {
-  const { spent, live } = spentOf(prod);
+  const { live } = spentOf(prod);
+  // el tope cuenta lo gastado sobre la grabación actual (igual que el servidor)
+  const spent = capSpentOf(prod);
   const cap = prod.capUsd && prod.capUsd > 0 ? prod.capUsd : defaultCapUsd && defaultCapUsd > 0 ? defaultCapUsd : 0;
   const ratio = cap > 0 ? spent / cap : 0;
   const warn = cap > 0 && ratio >= 0.8;

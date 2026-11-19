@@ -45,8 +45,8 @@ export function startJob(target: Jobbable, stage: string, fn: (step: Step) => Pr
   fn(step)
     .then(() => { target.job = { stage, status: "done", step: "Listo", endedAt: new Date().toISOString() }; save(); emitChange(["jobs:status"]); })
     .catch((e: unknown) => {
-      // Solo los proyectos usan la etapa "analisis": si falla sin análisis previo, vuelve a referencias.
-      if (stage === "analisis") { const p = target as Project; if (!p.analysis) p.stage = "referencias"; }
+      // Solo los proyectos usan el trabajo "analisis": si falla, el proyecto queda en «Idea y guion».
+      if (stage === "analisis") { const p = target as Project; if (!p.analysis) p.stage = "idea"; }
       const message = errMsg(e);
       target.job = { stage, status: "error", step: message, endedAt: new Date().toISOString() };
       log(target, "ERROR: " + message);
@@ -95,14 +95,14 @@ export async function analyze(project: Project, step: Step): Promise<void> {
   content.push({ type: "text", text: `Objetivo del proyecto: ${project.goal || "replicar/adaptar el formato a mi marca"}.\nDescompón la(s) referencia(s): hook, estructura por beats con tiempos, técnicas de retención, edición, por qué se viraliza y cómo adaptarlo a mi marca.` });
   step("La IA está analizando la referencia…");
   project.analysis = await ask({ stage: "analisis", projectId: project.id, system: systemPrompt(project), content, schema: Analysis });
-  // La etapa la decide analyzeAndScript: pasa a "guion" cuando hay guion (o cuando el guion falla tras el análisis).
+  // La etapa la decide analyzeAndScript: queda en "idea" (Idea y guion) con o sin guion.
   log(project, "Análisis listo");
 }
 
 // ---------- 2+3. Análisis y guion en el mismo trabajo ----------
 /** Analiza las referencias y enseguida escribe el guion. Sin referencias (pero con objetivo) escribe el guion directo
  *  desde el objetivo y la marca. Si el guion falla tras un análisis exitoso, el análisis se conserva, la etapa queda en
- *  "guion" (la interfaz ofrece "Escribir guion" para reintentar) y el error se reporta en el trabajo. */
+ *  "idea" (la interfaz ofrece "Escribir guion" para reintentar) y el error se reporta en el trabajo. */
 export async function analyzeAndScript(project: Project, step: Step): Promise<void> {
   if (project.references.length) {
     step("Analizando referencias…");
@@ -112,14 +112,14 @@ export async function analyzeAndScript(project: Project, step: Step): Promise<vo
     try {
       await writeScript(project, step);
     } catch (e) {
-      project.stage = "guion";
+      project.stage = "idea";
       throw new Error("El análisis quedó listo, pero el guion falló: " + errMsg(e));
     }
   } else {
     step("Escribiendo el guion desde tu objetivo…");
     await writeScript(project, step);
   }
-  project.stage = "guion";
+  project.stage = "idea";
   log(project, "Guion listo");
 }
 
@@ -136,7 +136,7 @@ export async function writeScript(project: Project, step: Step, feedback = ""): 
   project.script = await ask({ stage: "guion", projectId: project.id, system: systemPrompt(project), content, schema: Script });
   project.scriptApproved = false;
   project.scriptHistory = [...(project.scriptHistory || []), { at: new Date().toISOString(), feedback }];
-  project.stage = "guion";
+  project.stage = "idea";
 }
 
 // ---------- 5. Propuesta visual (sobre el material grabado) ----------
@@ -220,6 +220,7 @@ export async function runEdit(project: Project, step: Step): Promise<void> {
   const rel = (p: string | null | undefined): string | null => (p ? path.relative(projectDir(project.id), p) : null);
   project.edit = { ...res, final: rel(res.final), cut: rel(res.cut), srtPath: rel(res.srtPath), briefPath: res.briefPath, at: new Date().toISOString() };
   project.editApproved = false;
+  project.finalVideo = null; // un corte nuevo deja sin efecto el video aprobado: hay que volver a aprobar
   project.stage = "edicion";
 }
 
@@ -258,7 +259,7 @@ export async function analyzeInspoVideo(video: InspoVideo, step: Step): Promise<
 export function projectFromVideo(video: InspoVideo, { brandId, title }: { brandId?: string | null; title?: string } = {}): Project {
   const p: Project = {
     id: id(), title: title || (video.caption || "Idea de @" + video.account).replace(/\s+/g, " ").slice(0, 60),
-    goal: "", brandId: brandId || load().settings.defaultBrandId, stage: video.analysis ? "guion" : "referencias",
+    goal: "", brandId: brandId || load().settings.defaultBrandId, stage: "idea",
     references: [{ id: id(), url: video.url, file: video.file || null, note: `Desde Inspiración · @${video.account} · ${video.outlier ?? "?"}x`, info: { uploader: video.account, views: video.views, likes: video.likes, comments: video.comments, platform: video.platform }, transcript: video.transcript || "", frameUrls: video.frameUrls || null, inspoId: video.id, addedAt: new Date().toISOString() }],
     analysis: video.analysis || null, createdAt: new Date().toISOString(), log: [],
   };

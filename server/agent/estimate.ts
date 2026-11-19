@@ -53,12 +53,15 @@ export function estimateProduction(p: Project, mode: ProductionMode): Production
   const samples: number[] = [];
   for (const q of db.projects) {
     const prod = q.production as (Project["production"] & { mode?: ProductionMode }) | null | undefined;
-    if (!prod || prod.status !== "done" || !((prod.costUsd || 0) > MIN_SAMPLE_USD)) continue;
+    if (!prod || prod.status !== "done") continue;
+    // solo el gasto de la grabación actual (costUsd es el total del proyecto, con las grabaciones anteriores)
+    const spent = Math.max(0, (prod.costUsd || 0) - (prod.capBaseUsd || 0));
+    if (!(spent > MIN_SAMPLE_USD)) continue;
     if ((prod.mode || modeOf(q)) !== mode) continue;
     const rec = modelOfProject(q.id);
     const wRec = rec ? weightOf(rec) : 0;
     const ratio = wRec > 0 && wNow > 0 ? wNow / wRec : 1;
-    samples.push(prod.costUsd * ratio);
+    samples.push(spent * ratio);
   }
   let typical: number, low: number, high: number;
   const basis: ProductionEstimate["basis"] = samples.length >= 3 ? "historial" : "referencia";

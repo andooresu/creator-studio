@@ -10,13 +10,15 @@ import { load, save, id, getProject, projectDir, APP_DIR, DATA_DIR, MOTION_DIR, 
 import { scaffoldMotion, motionEnv, ensureLinks, copyStyle, isScaffolded } from "../motion/kit.ts";
 import { createStudioServer, realPrefix } from "./tools.ts";
 import type { StudioContext, QuestionAnswers, ApprovalDecision } from "./tools.ts";
-import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP, parseStartFlags, flagsText } from "./prompt.ts";
+import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP, parseStartFlags, flagsText, onlyFinalApproval } from "./prompt.ts";
+import { brandPresetFor } from "./brandPreset.ts";
+import type { BrandPreset } from "./brandPreset.ts";
 import { getStyle as findStyleById } from "../styles/store.ts";
 import { costOf } from "../ai.ts";
 import { initProgress, sameStages, startStage, pauseClock, resumeClock, closeCurrent, refreshEta, recordSample, inferStage, stageLabel, MAX_QUESTION_ROUNDS } from "./progress.ts";
 const findStyle = (sid: string | null | undefined) => (sid ? findStyleById(sid) ?? null : null);
 import type { ProductionMode, StartFlags } from "./prompt.ts";
-import type { PendingAction, Production, ProductionBudget, ProductionEvent, ProductionStatus, ProgressStageKey, Project, UsageRow } from "../../shared/types.ts";
+import type { PendingAction, Production, ProductionBudget, ProductionEvent, ProductionStatus, ProgressStageKey, Project, RenderOutput, UsageRow } from "../../shared/types.ts";
 
 // Campos internos extra que se guardan junto a Production (no forman parte del contrato de la interfaz).
 type ProdX = Production & {
@@ -167,7 +169,17 @@ function capOf(prod: ProdX, override?: number): number {
   if (own !== undefined && own > 0) return own;
   return Math.max(0, Number(load().settings.maxCostPerVideo) || 0);
 }
-const spentOf = (prod: ProdX): number => (prod.costUsd || 0) + (prod.liveUsd || 0);
+/** Gasto que cuenta contra el tope: el de la grabación actual (desde capBaseUsd). */
+const spentOf = (prod: ProdX): number => Math.max(0, (prod.costUsd || 0) + (prod.liveUsd || 0) - (prod.capBaseUsd || 0));
+
+/** Solo lectura: el error del tope si la producción ya lo alcanzó (con `override` como tope de este inicio), si no null.
+ *  Para revisar antes de un trabajo pago que termina lanzando el productor (Edición con plantilla). */
+export function capReached(p: Project, override?: number): string | null {
+  const prod = p.production as ProdX | null | undefined;
+  if (!prod) return null;
+  const cap = capOf(prod, override);
+  return cap > 0 && spentOf(prod) >= cap ? `Llegaste al tope de US$${usd(cap)} para este video. Súbelo para continuar.` : null;
+}
 
 /** Una pregunta pendiente que se descarta sin respuesta no gasta su ronda: el agente la volverá a hacer. */
 function refundQuestion(prod: ProdX): void {
@@ -324,8 +336,31 @@ function setStatus(pid: string, status: ProductionStatus): void {
   const prod = prodOf(pid);
   if (!prod) return;
   prod.status = status;
+  if (status === "done") markEditRunReady(pid, prod);
   touch(pid);
   persist(true);
+}
+
+/**
+ * Camino de edición por defecto (Project.editRun): cuando el productor termina con un render final, el paso «Plantilla»
+ * queda «listo». Se guarda con el touch/persist de setStatus.
+ */
+function markEditRunReady(pid: string, prod: ProdX): void {
+  const p = getProject(pid);
+  const run = p?.editRun;
+  if (!p || !run || run.state !== "plantilla") return;
+  if (currentRenders(p, prod).some((r) => r.mode === "final")) { run.state = "listo"; delete run.error; }
+}
+
+/**
+ * Renders del productor que cuentan como resultado ahora: con un EditRun de plantilla, solo los hechos después de que
+ * empezó esa corrida; si no, solo los posteriores a la grabación actual (los de un corte o una grabación anteriores no
+ * se ofrecen ni se aprueban). Sin grabación ni EditRun (reel/clase), todos.
+ */
+export function currentRenders(p: Project, prod: Production | null | undefined = p.production): RenderOutput[] {
+  const run = p.editRun;
+  const cutoff = run && !run.quick ? run.startedAt : p.recording?.at || "";
+  return (prod?.renders || []).filter((r) => (r.at || "") >= cutoff);
 }
 
 function anthropicKey(): string {
@@ -1239,7 +1274,8 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
   const ctx: StudioContext = {
     pid,
     dir,
-    emit: (ev) => event(pid, ev, ev.type === "media"),
+    // una herramienta que termina después de detener la sesión (p. ej. un render largo) ya no publica nada
+    emit: (ev) => { if (!lv.stopped) event(pid, ev, ev.type === "media"); },
     waitForUser: (action: PendingAction) => new Promise<unknown>((resolve, reject) => {
       const cur = prodOf(pid);
       // nunca se pisa un aviso de tope (la herramienta pudo arrancar mientras se interrumpía el turno) ni una
@@ -1265,7 +1301,9 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
     }),
     addRenders: (outs) => {
       const cur = prodOf(pid);
-      if (!cur) return;
+      // un render que termina después de detener o reiniciar la producción (p. ej. por una grabación nueva) no cuenta:
+      // es de una sesión que ya no existe y su «at» fresco lo haría pasar por resultado actual
+      if (!cur || lv.stopped) return;
       cur.renders = [...(cur.renders || []), ...outs];
       touch(pid);
       persist(true);
@@ -1273,6 +1311,10 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
     setStage: (key, note) => {
       if (!advanceStage(pid, key) || !note) return;
       event(pid, { type: "status", text: `${stageLabel(mode, key)}: ${note}` });
+    },
+    onlyFinalApproval: () => {
+      const cur = getProject(pid);
+      return Boolean(cur && onlyFinalApproval(cur, mode));
     },
     questionBudget: () => {
       const cur = prodOf(pid);
@@ -1420,13 +1462,48 @@ function parseCap(raw: unknown): number | undefined {
   return Math.round(v * 100) / 100;
 }
 
-export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean; flags?: unknown; capUsd?: number }): void {
-  anthropicKey(); // error claro en español antes de tocar nada
-  const capUsd = parseCap(opts.capUsd);
+/**
+ * Chequeo barato de lo que startProduction necesita (API key de Anthropic y entorno de Python del motor), sin arrancar
+ * nada. Lanza los mismos errores en español que startProduction.
+ */
+export function productionPreflight(): void {
+  anthropicKey();
   const env = motionEnv();
   if (!env.python) throw new Error(env.issues.find((i) => /pyenv\.sh/.test(i)) || 'Falta el entorno de Python del motor: ejecuta "sh motion/scripts/pyenv.sh" (necesita Python 3.12).');
+}
+
+/**
+ * Scaffold nuevo de la carpeta del motor. En modo talking con marca activa aplica el preset de marca (colores, acento de
+ * subtítulos y logo); si el preset falla, se registra y se sigue sin él (nunca bloquea la producción).
+ */
+function scaffoldFresh(p: Project, mode: ProductionMode, flags: StartFlags | undefined): string {
+  const style = findStyle(p.styleId);
+  let preset: BrandPreset | null = null;
+  if (mode === "talking") {
+    try { preset = brandPresetFor(p, flags, style); }
+    catch (e) { console.warn(`[productor ${p.id}] no se pudo preparar el preset de marca: ${(e as Error)?.message || e}`); }
+  }
+  if (!preset) return scaffoldMotion(p, { style });
+  try {
+    return scaffoldMotion(p, { style, presetDir: preset.presetDir, timelinePatch: preset.timelinePatch, extraFiles: preset.extraFiles });
+  } catch (e) {
+    console.warn(`[productor ${p.id}] falló el scaffold con el preset de marca; se sigue sin él: ${(e as Error)?.message || e}`);
+    // lo que el intento con preset alcanzó a dejar (preset.json, logo) no debe hacer creer que la marca quedó aplicada
+    const mdir = path.join(projectDir(p.id), "motion");
+    try { fs.rmSync(path.join(mdir, "preset.json"), { force: true }); fs.rmSync(path.join(mdir, "assets", "brand"), { recursive: true, force: true }); } catch {}
+    return scaffoldMotion(p, { style });
+  } finally {
+    preset.cleanup();
+  }
+}
+
+export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean; flags?: unknown; capUsd?: number; /** aviso de la app para el agente (no es un mensaje del usuario), p. ej. «hay un corte nuevo» */ notice?: string }): void {
+  anthropicKey(); // error claro en español antes de tocar nada
+  const capUsd = parseCap(opts.capUsd);
+  productionPreflight();
   const existing = p.production as ProdX | null | undefined;
   const brief = opts.brief?.trim();
+  const notice = opts.notice?.trim() || "";
   const flags = parseStartFlags(opts.flags);
   const now = new Date().toISOString();
 
@@ -1446,10 +1523,11 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     if (capUsd !== undefined) existing.capUsd = capUsd;
     prepareProgress(existing, existing.mode || modeOf(p), false, Boolean(opts.restyle));
     resetRetries(lv);
-    const text = [note, flagsText(p, flags), brief].filter(Boolean).join("\n\n") || "Continúa la producción desde donde quedaste.";
+    const text = [note, notice, flagsText(p, flags), brief].filter(Boolean).join("\n\n") || "Continúa la producción desde donde quedaste.";
     p.updatedAt = now;
     if (brief) event(p.id, { type: "user", text: brief });
     if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
+    if (notice) event(p.id, { type: "status", text: notice.split("\n")[0] });
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
     lv.input.push(text);
     setStatus(p.id, "running");
@@ -1458,10 +1536,10 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
 
   if (existing) guardCap(p, capUsd);
   const reuse = Boolean(existing?.dir && isScaffolded(existing.dir));
-  const dir = reuse ? existing!.dir : scaffoldMotion(p, { style: findStyle(p.styleId) });
-  try { ensureLinks(dir); } catch {}
   // al reanudar se conserva el modo de la producción salvo que el cliente pida cambiarlo explícitamente (changeMode)
   const mode: ProductionMode = existing?.mode && existing.sessionId && !opts.changeMode ? existing.mode : opts.mode || existing?.mode || modeOf(p);
+  const dir = reuse ? existing!.dir : scaffoldFresh(p, mode, flags ?? existing?.flags);
+  try { ensureLinks(dir); } catch {}
   let prod: ProdX;
   let note = "";
   const fresh = !existing;
@@ -1483,16 +1561,19 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
   p.updatedAt = now;
   if (brief) event(p.id, { type: "user", text: brief });
   if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
+  if (notice && prod.sessionId) event(p.id, { type: "status", text: notice.split("\n")[0] });
   event(p.id, { type: "status", text: prod.sessionId ? "Reanudando la producción…" : "Iniciando la producción…" }, true);
-  const extra = [note, flagsText(p, flags), brief].filter(Boolean).join("\n\n");
+  const extra = [note, notice, flagsText(p, flags), brief].filter(Boolean).join("\n\n");
   if (prod.sessionId) launch(p, `${resumeNote()}\n\n${extra || "Continúa la producción desde donde quedaste."}`, prod.sessionId);
   else launch(p, buildKickoff(p, mode, brief, flags));
 }
 
-export function sendMessage(p: Project, text: string): void {
+export function sendMessage(p: Project, text: string, /** aviso de la app para el agente (no se muestra como mensaje del usuario) */ notice?: string): void {
   const t = String(text || "").trim();
   if (!t) throw new Error("Escribe un mensaje.");
-  if (!p.production) return startProduction(p, { mode: modeOf(p), brief: t });
+  if (!p.production) return startProduction(p, { mode: modeOf(p), brief: t, notice });
+  const n = notice?.trim() || "";
+  const forAgent = n ? `${n}\n\n${t}` : t;
   const lv = live.get(p.id);
   assertNotClosing(lv);
   if (!lv) anthropicKey();
@@ -1509,9 +1590,9 @@ export function sendMessage(p: Project, text: string): void {
   if (lv) {
     resetRetries(lv); // el usuario escribió: los reintentos vuelven a empezar
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
-    lv.input.push(t);
+    lv.input.push(forAgent);
     if (!toolWaiting) setStatus(p.id, "running");
-  } else resumeWith(p, t);
+  } else resumeWith(p, forAgent);
 }
 
 export function answerQuestion(p: Project, questionId: string, answers: Record<string, string>): void {
@@ -1589,6 +1670,48 @@ export function resolveBudget(p: Project, budgetId: string, opts: { raiseTo?: nu
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
     lv.input.push(text);
   } else resumeWith(p, text);
+}
+
+/**
+ * Grabación nueva: la producción anterior quedó hecha sobre otro video. Se detiene si estaba trabajando (no sigue
+ * gastando) y se olvida su sesión y sus renders, para que la próxima plantilla arranque con un kickoff nuevo sobre la
+ * grabación nueva (la carpeta del motor se reutiliza). No hace nada si no hay producción.
+ */
+export function resetProductionForNewRecording(p: Project): void {
+  const prod = p.production as ProdX | null | undefined;
+  if (!prod) return;
+  if (live.has(p.id) || prod.status === "running" || prod.status === "waiting") stopProduction(p);
+  settleLiveCost(p.id, prod);
+  prod.pending = null;
+  prod.sessionId = null;
+  prod.renders = [];
+  prod.finalSampled = false;
+  prod.status = "idle";
+  // empieza de cero de verdad: rondas de preguntas, avance y gasto contra el tope cuentan por grabación. costUsd sigue
+  // siendo el total gastado en el proyecto (no se pierde); el tope cuenta desde aquí (capBaseUsd). capUsd se conserva.
+  prod.questionRounds = 0;
+  prod.maxQuestionRounds = undefined;
+  prod.progress = undefined;
+  prod.capBaseUsd = prod.costUsd || 0;
+  prod.capWarned = undefined;
+  event(p.id, { type: "status", text: "Grabación nueva: la próxima producción empieza de cero sobre ella." }, true);
+}
+
+/**
+ * «Aprobar video» en Edición mientras el productor espera la aprobación del video final: cuenta como esa aprobación.
+ * Con la herramienta viva esperando, se le responde (el agente cierra su turno); sin ella (p. ej. tras un reinicio) no
+ * se reanuda la sesión (no gasta): la producción queda "done". Devuelve true si había esa aprobación pendiente.
+ */
+export function approveFinalFromEdit(p: Project): boolean {
+  const prod = p.production as ProdX | null | undefined;
+  const pend = prod?.pending;
+  if (!prod || !pend || pend.type !== "approval" || pend.data.kind !== "final") return false;
+  const lv = live.get(p.id);
+  if (lv?.resolvers.has(pend.data.id)) { decideApproval(p, pend.data.id, true, "Aprobado desde Edición."); return true; }
+  prod.pending = null;
+  setStatus(p.id, "done");
+  event(p.id, { type: "decision", text: `Aprobado: ${pend.data.title} (desde Edición)`, data: { approvalId: pend.data.id, kind: pend.data.kind, approved: true } }, true);
+  return true;
 }
 
 /**

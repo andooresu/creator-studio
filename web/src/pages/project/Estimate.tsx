@@ -51,7 +51,7 @@ export const parseCap = (v: string): number | undefined => {
   const t = v.trim().replace(",", ".");
   if (!t) return undefined;
   const n = Number(t);
-  return isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined;
+  return isFinite(n) && n >= 0 && n <= 10_000 ? Math.round(n * 100) / 100 : undefined; // mismo rango que el servidor
 };
 /** true si el campo tiene texto que no es un tope válido (hay que corregirlo antes de iniciar, no se descarta en silencio). */
 export const capInvalid = (v: string): boolean => v.trim() !== "" && parseCap(v) === undefined;
@@ -93,7 +93,7 @@ export function CapField({ id, value, onChange, disabled, className, defaultCap 
         className="w-full max-w-[160px] rounded-lg border border-border bg-surface-2 px-3 py-2 text-[14px] text-foreground tabular-nums outline-none transition-colors focus-visible:border-blue focus-visible:ring-[3px] focus-visible:ring-blue/30 disabled:opacity-60"
       />
       <span id={`${id}-help`} className="text-[12px] text-muted-foreground">
-        {invalid ? "Escribe un número igual o mayor que 0." : `El productor se pausa y te pregunta antes de pasarlo. Vacío o 0 = el tope de Ajustes${fallback}.`}
+        {invalid ? "Escribe un número entre 0 y 10.000." : `El productor se pausa y te pregunta antes de pasarlo. Vacío o 0 = el tope de Ajustes${fallback}.`}
       </span>
     </div>
   );

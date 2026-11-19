@@ -7,6 +7,7 @@ import { api } from "@/api.ts";
 import { useApp } from "@/store.tsx";
 import { KIND_LABEL } from "@/ui.tsx";
 import { projectStatus } from "@/components/AppSidebar.tsx";
+import { extractUrls } from "@/components/LinkChips.tsx";
 import { Onboarding } from "@/components/Onboarding.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { cn } from "@/lib/utils.ts";
@@ -175,13 +176,24 @@ function QuickFromLink() {
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const link = url.trim();
-    if (!link) return toast("Pega al menos un link", true);
+    if (!url.trim()) return toast("Pega al menos un link", true);
+    const { urls, rest } = extractUrls(url);
+    if (!urls.length) return toast("Eso no parece un link. Pega la dirección completa del video (https://…).", true);
+    // lo que parece un link pero no se pudo leer (p. ej. «htps://…» o «ftp://…») no se descarta en silencio: se avisa
+    // antes de crear (y de lanzar el análisis, que usa tu clave)
+    const bad = rest.filter((t) => /[./]/.test(t));
+    if (bad.length) return toast(`No pude leer ${bad.length === 1 ? "este link" : "estos links"}: ${bad.slice(0, 3).join(" ")}${bad.length > 3 ? "…" : ""}. Corrígelo o quítalo.`, true);
     setBusy(true);
     try {
-      const p = await act(() => api<Project>("/api/projects", { method: "POST", body: { title: note.trim().slice(0, 60) || "Idea desde link" } }));
-      await act(() => api(`/api/projects/${p.id}/references`, { method: "POST", body: { url: link, note } }));
-      if (analyze) await act(() => api(`/api/projects/${p.id}/analyze`, { method: "POST" }));
+      // una sola petición: el servidor valida los links antes de crear (sin proyectos huérfanos)
+      const p = await act(() => api<Project>("/api/projects", {
+        method: "POST",
+        body: {
+          title: note.trim().slice(0, 60) || "Idea desde link",
+          references: urls.map((u) => ({ url: u, note: note.trim() })),
+          autoScript: analyze,
+        },
+      }));
       await refresh();
       navigate(`#/p/${p.id}`);
     } catch { /* el error ya se mostró como notificación */ }

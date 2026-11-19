@@ -9,9 +9,9 @@ export interface StageProps {
   running: boolean;
   /**
    * POST /api/projects/:id/<path> con body opcional; actualiza el proyecto con la respuesta,
-   * refresca el estado global y muestra okMsg. Lanza (y notifica) si falla.
+   * refresca el estado global y muestra okMsg. Devuelve el proyecto de la respuesta. Lanza (y notifica) si falla.
    */
-  run: (path: string, body?: unknown, okMsg?: string) => Promise<void>;
+  run: (path: string, body?: unknown, okMsg?: string) => Promise<Project | undefined>;
   /** Reemplaza el proyecto local (p. ej. tras un PUT/PATCH/DELETE hecho por la etapa). */
   setProject: (p: Project) => void;
   /** Cambia la etapa que se está viendo (sin cambiar la etapa real del proyecto). */

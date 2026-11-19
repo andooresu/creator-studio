@@ -10,14 +10,12 @@ import { FolderOpen, MoreHorizontal, Trash2 } from "lucide-react";
 import type { Project, ProjectKind, Stage } from "../../../shared/types.ts";
 import { api } from "../api.ts";
 import { useApp, usePoll } from "../store.tsx";
-import { JobBanner, KIND_LABEL, STAGE_LABEL, STEPS } from "../ui.tsx";
+import { JobBanner, KIND_LABEL, STAGE_LABEL, STEPS, jobLabel } from "../ui.tsx";
 import { Stepper, type StepItem } from "@/components/Stepper.tsx";
 import { Button, buttonVariants } from "@/components/ui/button.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
 import type { StageProps } from "./project/contract.ts";
-import { RefsStage } from "./project/RefsStage.tsx";
-import { AnalysisStage } from "./project/AnalysisStage.tsx";
-import { ScriptStage } from "./project/ScriptStage.tsx";
+import { IdeaStage } from "./project/IdeaStage.tsx";
 import { RecordingStage } from "./project/RecordingStage.tsx";
 import { ConceptStage } from "./project/ConceptStage.tsx";
 import { EditStage } from "./project/EditStage.tsx";
@@ -25,9 +23,10 @@ import { PublishStage } from "./project/PublishStage.tsx";
 import { ProductionPanel } from "./project/Production.tsx";
 
 const STAGE_VIEWS: Partial<Record<string, ComponentType<StageProps>>> = {
-  referencias: RefsStage, analisis: AnalysisStage, guion: ScriptStage, grabacion: RecordingStage,
-  concepto: ConceptStage, edicion: EditStage, publicacion: PublishStage,
+  idea: IdeaStage, grabacion: RecordingStage, concepto: ConceptStage, edicion: EditStage, publicacion: PublishStage,
 };
+/** Enlaces viejos (#/p/<id>/referencias|analisis|guion) siguen funcionando: se ven en «Idea y guion». */
+const VIEW_ALIAS: Record<string, string> = { referencias: "idea", analisis: "idea", guion: "idea" };
 
 /** Proyectos del motor de video: sesión de producción con stepper de solo lectura. */
 const isMotion = (p: Project): boolean => p.kind === "reel" || p.kind === "clase";
@@ -76,14 +75,18 @@ function motionStep(p: Project): number {
 }
 
 function stepIndex(s: string): number { const i = STEPS.indexOf(s as Stage); return i === -1 ? STEPS.length : i; }
-/** Etapa a mostrar por defecto: la real del proyecto ("publicado" se ve en Publicación). */
-const defaultView = (s: Stage): string => (s === "publicado" ? "publicacion" : s);
-/** Etapa que muestra el progreso de un trabajo según su tipo ("tomas" se ve en Edición). */
+/** Etapa a mostrar por defecto: la real del proyecto ("publicado" se ve en Publicación; una desconocida, en Idea). */
+const defaultView = (s: Stage): string => (s === "publicado" ? "publicacion" : STAGE_VIEWS[s] ? s : "idea");
+/** Etapa que muestra el progreso de un trabajo según su tipo (análisis y guion en Idea; tomas, corte y render en Edición). */
 function jobView(jobStage: string): string {
-  if (jobStage === "tomas") return "edicion";
-  if (jobStage === "publicar") return "publicacion";
-  return STAGE_VIEWS[jobStage] ? jobStage : "";
+  if (jobStage === "analisis" || jobStage === "guion") return "idea";
+  if (jobStage === "tomas" || jobStage === "edicion" || jobStage === "render") return "edicion";
+  if (jobStage === "publicar" || jobStage === "publicacion") return "publicacion";
+  if (jobStage === "concepto") return "concepto";
+  return "";
 }
+/** Lo que el sondeo compara para volver a pintar: el trabajo, el avance de la edición, el video final y el productor. */
+const pollKey = (x: Project): string => JSON.stringify([x.job ?? null, x.editRun ?? null, x.finalVideo ?? null, x.production?.status ?? null, x.production?.renders?.length ?? 0, x.stage]);
 
 /** Llama fn con el valor cuando el control dispara el evento nativo "change" (al confirmar, no en cada tecla). */
 function useNativeChange<T extends HTMLInputElement | HTMLTextAreaElement>(fn: (value: string) => void) {
@@ -198,13 +201,19 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
   const pRef = useRef<Project | null>(null);
   // Etapa en la que se lanzó el trabajo en curso (la que muestra su progreso). Al terminar, solo se mueve la vista
   // si sigues ahí; si te fuiste a otra etapa, sale un aviso con «Ver».
-  const originRef = useRef<{ startedAt?: string; view: string } | null>(null);
+  const originRef = useRef<{ startedAt?: string; view: string; stage?: string } | null>(null);
 
-  const setProject = useCallback((x: Project) => { pRef.current = x; setP(x); }, []);
+  // Último estado con el que el sondeo de esta vista detectó transiciones (trabajo terminado, «listo»). Lo mueven solo
+  // el sondeo, la carga y las acciones de esta vista: no el panel del productor embebido, que tiene su propio sondeo y,
+  // si su pedido llega primero, haría que estas transiciones no se vieran nunca.
+  const seenRef = useRef<Project | null>(null);
+
+  const setProject = useCallback((x: Project) => { pRef.current = x; seenRef.current = x; setP(x); }, []);
 
   // La etapa que se ve vive en la URL (#/p/<id>/<etapa>): Atrás/Adelante y recargar la respetan.
   // Sin etapa en la URL se ve la etapa real del proyecto.
-  const viewing = p ? (sub && STAGE_VIEWS[sub] ? sub : defaultView(p.stage)) : "";
+  const subView = sub ? VIEW_ALIAS[sub] ?? sub : undefined;
+  const viewing = p ? (subView && STAGE_VIEWS[subView] ? subView : defaultView(p.stage)) : "";
   const viewingRef = useRef(viewing);
   viewingRef.current = viewing;
   const subRef = useRef(sub);
@@ -233,7 +242,7 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
     if (j?.status !== "running") return;
     if (prev?.job?.status === "running" && prev.job.startedAt === j.startedAt) return;
     const view = jobView(j.stage);
-    originRef.current = { startedAt: j.startedAt, view: view || viewingRef.current };
+    originRef.current = { startedAt: j.startedAt, view: view || viewingRef.current, stage: np.stage };
     if (view) goView(view);
   }, [goView]);
 
@@ -242,10 +251,18 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
     const prev = pRef.current;
     const np = await api<Project>(`/api/projects/${prev.id}`).catch(() => null);
     if (!np || !pRef.current) return;
-    const wasRunning = pRef.current.job?.status === "running";
-    const prevJob = pRef.current.job;
-    const changed = JSON.stringify(np.job) !== JSON.stringify(pRef.current.job);
+    const seen = seenRef.current || pRef.current;
+    const wasRunning = seen.job?.status === "running";
+    const prevJob = seen.job;
+    const jobChanged = JSON.stringify(np.job) !== JSON.stringify(seen.job);
+    const changed = jobChanged || pollKey(np) !== pollKey(seen) || pollKey(np) !== pollKey(pRef.current);
+    const wasReady = seen.editRun?.state === "listo";
     pRef.current = np;
+    seenRef.current = np;
+    if (changed && !jobChanged && !wasReady && np.editRun?.state === "listo") {
+      if (viewingRef.current !== "edicion") sonner.success("Tu video está listo", { action: { label: "Ver", onClick: () => navigate(`#/p/${np.id}/edicion`) }, duration: 8000 });
+      else toast("Tu video está listo ✓");
+    }
     if (changed) {
       if (wasRunning && np.job?.status === "done") {
         const origin = originRef.current;
@@ -253,8 +270,15 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
         const cur = viewingRef.current;
         const startedView = origin?.view ?? (jobView(prevJob?.stage || "") || cur);
         const dest = defaultView(np.stage);
-        if (cur === dest) toast("Listo ✓");
-        else if (cur === startedView) { navigate(`#/p/${np.id}/${dest}`); toast("Listo ✓"); }
+        // el trabajo de corte terminó pero la plantilla recién empieza: todavía no está listo
+        const er = np.editRun;
+        const doneMsg = prevJob?.stage === "edicion" && er && !er.quick && er.state !== "listo" && er.state !== "error" ? "Corte listo: aplicando la plantilla…" : "Listo ✓";
+        // solo se sigue a la etapa real si el trabajo la movió (p. ej. en un proyecto aprobado, elegir tomas o exportar
+        // desde Edición no cambia la etapa «publicacion»: te quedas en Edición)
+        const stageMoved = (origin?.stage ?? seen.stage) !== np.stage;
+        if (cur === dest) toast(doneMsg);
+        else if (cur === startedView && !stageMoved) toast(doneMsg);
+        else if (cur === startedView) { navigate(`#/p/${np.id}/${dest}`); toast(doneMsg); }
         else {
           // te quedas donde estás (fija la etapa en la URL para que la vista no siga a la etapa real)
           if (!subRef.current) navigate(`#/p/${np.id}/${cur}`);
@@ -268,21 +292,23 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
     }
   }, 2000, p !== null && !isMotion(p), id ? [`projects:${id}`, `step:projects:${id}`] : undefined);
 
-  const run = useCallback(async (path: string, body?: unknown, okMsg?: string): Promise<void> => {
+  const run = useCallback(async (path: string, body?: unknown, okMsg?: string): Promise<Project | undefined> => {
     const cur = pRef.current;
-    if (!cur) return;
+    if (!cur) return undefined;
     const np = await act(() => api<Project>(`/api/projects/${cur.id}/${path}`, { method: "POST", body: body || {} }), okMsg);
     setProject(np);
     followJobStart(cur, np);
     refresh().catch(() => {});
+    return np;
   }, [act, refresh, setProject, followJobStart]);
 
   // Las etapas que reemplazan el proyecto (p. ej. al subir la grabación) también siguen al trabajo que el servidor lance.
   const setProjectFromStage = useCallback((x: Project) => {
     const prev = pRef.current;
-    setProject(x);
+    pRef.current = x; // seenRef no: las transiciones las sigue detectando el sondeo de esta vista
+    setP(x);
     followJobStart(prev, x);
-  }, [setProject, followJobStart]);
+  }, [followJobStart]);
 
   const goStage = useCallback((s: Stage) => goView(defaultView(s)), [goView]);
 
@@ -297,18 +323,17 @@ export function ProjectView({ id, sub }: { id: string; sub?: string }) {
     );
   }
   const cur = stepIndex(p.stage);
-  // Hecho = etapa anterior a la real y con su resultado (Análisis sin análisis o Guion sin guion no se marcan).
-  const isDone = (s: StepItem, i: number): boolean =>
-    i < cur && (s.id !== "analisis" || !!p.analysis) && (s.id !== "guion" || !!p.script);
+  // Hecho = etapa anterior a la real («Idea y guion» también cuando el guion ya está aprobado).
+  const isDone = (s: StepItem, i: number): boolean => i < cur || (s.id === "idea" && !!p.scriptApproved);
   const job = p.job;
   const running = job?.status === "running";
-  const View = STAGE_VIEWS[viewing] || RefsStage;
+  const View = STAGE_VIEWS[viewing] || IdeaStage;
 
   return (
     <>
       <ProjectHeader key={p.id + "\u0000" + p.title} p={p} setProject={setProject} />
       <Stepper steps={TALK_STEPS} current={cur} viewing={viewing} onSelect={goView} isDone={isDone} />
-      <JobBanner job={job} label={job ? STAGE_LABEL[job.stage as Stage] || job.stage : undefined} onClose={() => setProject({ ...p, job: null })} />
+      <JobBanner job={job} label={job ? jobLabel(job.stage) : undefined} onClose={() => setProject({ ...p, job: null })} />
       <div id="stage">
         <View p={p} running={running} run={run} setProject={setProjectFromStage} goStage={goStage} />
       </div>

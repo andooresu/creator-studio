@@ -1,11 +1,12 @@
-// 5. Propuesta visual: vista previa, subtítulos con color de acento, paleta, momentos,
-// música, portada y feedback / aprobación.
+// 3. Propuesta visual: vista previa, subtítulos con color de acento, paleta, momentos, música, portada y
+// feedback / aprobación. Aprobar lanza la edición por defecto (tomas + corte + plantilla, o solo corte rápido).
 import { useState } from "react";
 import { ArrowRight, Check, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
 import { useApp } from "../../store.tsx";
 import { Tag } from "../../ui.tsx";
 import type { StageProps } from "./contract.ts";
+import { EditRunOptions, editRunSummary, useEditRunOptions } from "./EditRunOptions.tsx";
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -30,6 +31,10 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
   const { state, toast } = useApp();
   const [fb, setFb] = useState("");
   const c = p.concept;
+  const opts = useEditRunOptions(p);
+  // evita un segundo pedido (doble clic) mientras el primero no volvió. Va antes de cualquier return: los hooks se
+  // llaman siempre en el mismo orden (la propuesta llega con el componente ya montado)
+  const [approving, setApproving] = useState(false);
 
   if (!c) {
     if (running) return <div className="card" role="status" aria-live="polite"><p className="muted">La IA está diseñando la propuesta…</p></div>;
@@ -65,10 +70,17 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
   };
 
   const approve = async () => {
+    if (approving) return;
+    if (opts.invalid) { toast("Corrige el tope para este video: escribe un número entre 0 y 10.000.", true); document.getElementById(`concept-${p.id}-cap`)?.focus(); return; }
+    setApproving(true);
     try {
-      await run("approve/concept", undefined, "Propuesta aprobada ✓");
+      const np = await run("approve/concept", { edit: opts.request() });
+      // la aprobación vale aunque la edición no haya podido arrancar: el aviso dice cuál de las dos pasó
+      if (np?.editRun?.state === "error") toast(`Propuesta aprobada, pero la edición no arrancó: ${np.editRun.error || "error desconocido"}`, true);
+      else toast(opts.quick ? "Propuesta aprobada: cortando tu video ✓" : "Propuesta aprobada: editando tu video ✓");
       goStage("edicion");
     } catch { /* el error ya se mostró como notificación */ }
+    finally { setApproving(false); }
   };
 
   return (
@@ -96,8 +108,17 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
           <textarea aria-label="Cambios a la propuesta" value={fb} onChange={(e) => setFb(e.target.value)} placeholder="Subtítulos más pequeños, menos zooms, música más oscura…" />
           <div className="mt-2 flex flex-wrap gap-2">
             <Button variant="secondary" disabled={running} onClick={() => void revise()}>Pedir cambios</Button>
-            <Button disabled={running} onClick={() => void approve()}><Check aria-hidden />Aprobar propuesta</Button>
+            {p.conceptApproved ? <Button onClick={() => goStage("edicion")}>Ir a Edición<ArrowRight aria-hidden /></Button> : null}
           </div>
+          {p.conceptApproved ? null : (
+            <div className="mt-4 grid gap-3 border-t border-[var(--line)] pt-4">
+              <p className="m-0 text-[14px]">{editRunSummary(opts)}</p>
+              <EditRunOptions o={opts} idPrefix={`concept-${p.id}`} disabled={running} />
+              <div>
+                <Button disabled={running || approving || opts.invalid} onClick={() => void approve()}><Check aria-hidden />Aprobar propuesta</Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

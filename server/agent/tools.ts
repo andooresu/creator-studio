@@ -34,6 +34,8 @@ export interface StudioContext {
   questionBudget(): { used: number; max: number };
   /** consume una ronda de preguntas; false si ya se alcanzó el máximo (no se pregunta) */
   useQuestionRound(): boolean;
+  /** talking con guion y propuesta visual aprobados: la única aprobación permitida es la del video final */
+  onlyFinalApproval?(): boolean;
 }
 
 export type QuestionAnswers = Record<string, string>;
@@ -376,6 +378,10 @@ export function studioTools(ctx: StudioContext) {
       media: z.array(z.string()).optional().describe("rutas relativas a la carpeta del proyecto (audio, video o imágenes) para revisar"),
     },
     safe(async ({ kind, title, summary, media }) => {
+      // propuesta visual ya aprobada (talking): no se bloquea por aprobaciones intermedias
+      if (kind !== "final" && ctx.onlyFinalApproval?.()) {
+        return ok(`En este proyecto la propuesta visual ya está aprobada: no pidas aprobación de ${kind}; sigue con el brief prellenado. La única aprobación es la del video final.`);
+      }
       const urls: string[] = [];
       for (const m of media || []) {
         const r = safeRel(ctx.dir, m);

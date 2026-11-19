@@ -6,6 +6,7 @@ import path from "node:path";
 import { load, getBrand, projectDir, MOTION_DIR, PROJECTS_DIR, DEFAULT_BRAND } from "../db.ts";
 import { brandToPrompt } from "../brand.ts";
 import { stagesFor, MAX_QUESTION_ROUNDS, QUESTIONS_PER_ROUND } from "./progress.ts";
+import { brandColors, validHex, brandPresetApplied, brandLogoInDir } from "./brandPreset.ts";
 import { FORMATS } from "../../shared/types.ts";
 import type { AudioProvider, Brand, Format, Project, Settings, Style } from "../../shared/types.ts";
 
@@ -57,6 +58,14 @@ export function activeBrand(p: Project, flags?: StartFlags): Brand | null {
 /** El proyecto ya trae guion o concepto aprobados (no hace falta entrevistar para entenderlo). */
 function hasApprovedBase(p: Project): boolean {
   return Boolean((p.scriptApproved && p.script) || (p.conceptApproved && p.concept));
+}
+
+/**
+ * Talking con guion y propuesta visual aprobados: sin entrevista y sin aprobaciones intermedias (shotlist, brief, concepto,
+ * música, voz). La única aprobación es la del video final (tools.ts lo hace cumplir en request_approval).
+ */
+export function onlyFinalApproval(p: Project, mode: ProductionMode): boolean {
+  return mode === "talking" && Boolean(p.scriptApproved && p.script && p.conceptApproved && p.concept);
 }
 
 const FMT_LABEL: Record<Format, string> = { "9x16": "9:16", "4x5": "4:5", "1x1": "1:1", "16x9": "16:9" };
@@ -152,7 +161,89 @@ function projectData(p: Project, mode: ProductionMode, flags?: StartFlags): stri
   return out.join("\n");
 }
 
-function modeGuide(mode: ProductionMode, flags?: StartFlags): string {
+const FMT_RE: [Format, RegExp][] = [["9x16", /\b9\s*[:x×/]\s*16\b/i], ["4x5", /\b4\s*[:x×/]\s*5\b/i], ["1x1", /\b1\s*[:x×/]\s*1\b/i], ["16x9", /\b16\s*[:x×/]\s*9\b/i]];
+
+/**
+ * Bloque «Brief prellenado» (modo talking): cada campo con su fuente entre paréntesis, solo los que tienen datos.
+ * Los campos de marca salen solo si `brand` (activeBrand) no es null.
+ */
+export function briefPrefill(p: Project, mode: ProductionMode, brand: Brand | null, flags: StartFlags | undefined, style: Style | null | undefined): string {
+  if (mode !== "talking") return "";
+  const g = brand?.guide || null;
+  const lines: string[] = [];
+  const add = (label: string, value: string | null | undefined, src: string): void => {
+    const v = String(value ?? "").replace(/\s+/g, " ").trim();
+    if (v) lines.push(`- ${label}: ${v} (${src})`);
+  };
+  const list = (xs: (string | null | undefined)[] | undefined, n: number, len = 120): string => (xs || []).map((x) => cut(x, len)).filter(Boolean).slice(0, n).join("; ");
+  const conceptSrc = p.conceptApproved ? "concepto" : "concepto sin aprobar";
+
+  add("Objetivo", p.goal, "usuario");
+
+  if (g) {
+    const parts = [
+      g.audiencia?.perfil ? cut(g.audiencia.perfil, 240) : "",
+      g.audiencia?.dolores?.length ? `dolores: ${list(g.audiencia.dolores, 3, 80)}` : "",
+      g.audiencia?.deseos?.length ? `deseos: ${list(g.audiencia.deseos, 3, 80)}` : "",
+      g.voz?.tono ? `voz: ${cut(g.voz.tono, 160)}` : "",
+      g.voz?.reglas?.length ? `reglas de voz: ${list(g.voz.reglas, 4)}` : "",
+    ].filter(Boolean);
+    add("Público y voz", parts.join(" · "), "marca");
+  }
+
+  const ctaRow = p.script?.guion?.find((x) => /cta|llamad/i.test(x.seccion || ""));
+  if (ctaRow?.texto?.trim()) add("CTA", `«${cut(ctaRow.texto, 240)}»`, "guion");
+  else if (g?.ctas?.[0]) add("CTA", `«${cut(g.ctas[0], 240)}»`, "marca");
+
+  if (g) add("No hacer", list([...(g.noHacer || []), ...(g.voz?.evitar || [])], 10), "marca");
+
+  if (flags?.formats?.length) add("Formatos", flags.formats.map((x) => FMT_LABEL[x]).join(", "), "opciones del usuario");
+  else {
+    const fromBrand = [...new Set((g?.formatos || []).flatMap((t) => FMT_RE.filter(([, re]) => re.test(t)).map(([f]) => f)))];
+    if (fromBrand.length) add("Formatos", fromBrand.map((x) => FMT_LABEL[x]).join(", "), "marca");
+    else add("Formatos", "9:16", "por defecto");
+  }
+
+  const dur = (n: number | null | undefined): string => (typeof n === "number" && Number.isFinite(n) && n > 0 ? `~${Math.round(n)} s` : "");
+  if (dur(p.edit?.finalDuration)) add("Duración", dur(p.edit?.finalDuration), "corte automático");
+  else if (dur(p.recording?.duration)) add("Duración", dur(p.recording?.duration), "grabación");
+  else add("Duración", dur(p.script?.duracionSeg), "guion");
+
+  if (p.script?.hooks?.[0]) add("Hook", `«${cut(p.script.hooks[0], 200)}»`, "guion");
+
+  const brandAccent = g ? brandColors(g).accent : undefined;
+  if (p.concept && p.conceptApproved) {
+    const sub = p.concept.subtitulos;
+    const acc = brand ? validHex(sub?.colorAcento) : null;
+    add("Subtítulos", [sub?.fuente, sub?.estilo, acc ? `acento ${acc}` : "", sub?.posicion, sub?.animacion].filter(Boolean).join(", "), "concepto");
+  } else if (style?.captionPreset || brandAccent) {
+    const src = [style?.captionPreset ? "estilo" : "", brandAccent ? "marca" : ""].filter(Boolean).join(" + ");
+    add("Subtítulos", [style?.captionPreset ? `preset ${style.captionPreset}` : "", brandAccent ? `acento ${brandAccent}` : ""].filter(Boolean).join(", "), src);
+  }
+
+  if (g && (g.visual?.paleta?.length || g.visual?.tipografias?.length)) {
+    const pal = (g.visual.paleta || []).filter((c) => validHex(c.hex)).map((c) => `${c.nombre ? `${cut(c.nombre, 30)} ` : ""}${validHex(c.hex)}${c.uso ? ` (${cut(c.uso, 40)})` : ""}`).join(", ");
+    const fonts = (g.visual.tipografias || []).map((t) => `${t.nombre}${t.uso ? ` (${cut(t.uso, 40)})` : ""}`).join(", ");
+    add("Paleta y fuentes", [pal ? `paleta ${pal}` : "", fonts ? `tipografías ${fonts}` : ""].filter(Boolean).join(" · "), "marca");
+  } else if (p.concept?.paleta?.length && flags?.useBrand !== false) add("Paleta y fuentes", `paleta ${p.concept.paleta.join(", ")}`, conceptSrc);
+  else if (style && (style.tokens.palette.length || style.tokens.fonts.length)) {
+    add("Paleta y fuentes", [style.tokens.palette.length ? `paleta ${style.tokens.palette.join(", ")}` : "", style.tokens.fonts.length ? `tipografías ${style.tokens.fonts.join(", ")}` : ""].filter(Boolean).join(" · "), "estilo");
+  }
+
+  if (flags?.music === false) add("Música", "sin música", "opciones del usuario");
+  else if (p.concept?.musica && (p.concept.musica.estilo || p.concept.musica.notas)) {
+    const m = p.concept.musica;
+    add("Música", [m.estilo, m.bpm ? `${m.bpm}${/bpm/i.test(m.bpm) ? "" : " bpm"}` : "", m.notas ? cut(m.notas, 120) : ""].filter(Boolean).join(", "), conceptSrc);
+  } else add("Música", "según la plantilla", style ? "estilo" : "por defecto");
+
+  add("Voz", "la del creador (no se genera locución)", "por defecto");
+
+  return `# Brief prellenado (decidido; no lo vuelvas a preguntar)
+Úsalo tal cual para brief.md (conserva la fuente de cada campo). Solo completa lo que falte.
+${lines.join("\n")}`;
+}
+
+function modeGuide(mode: ProductionMode, flags?: StartFlags, locked = false): string {
   if (mode === "reel") return `## Modo: REEL COMERCIAL
 Reel publicitario / de lanzamiento: concepto con STRATEGY.md, música original por proyecto, SFX en los golpes, VO opcional, material real (capturas, fotos, clips importados con scripts/seq.py) sobre el sistema de movimiento del estilo. Hook legible en el fotograma 0, algo nuevo cada 2–4 s, end card ≤ 2 s con CTA.`;
   if (mode === "clase") return `## Modo: CLASE / EXPLICADOR
@@ -163,6 +254,8 @@ Subtítulos desde los tiempos por palabra (words.json de la grabación, re-tempo
 ### Música en este modo (manda sobre AUDIO.md y sobre "Audio del motor")
 ${flags?.music === false
     ? "- El usuario APAGÓ la música de fondo: no generes música ni la propongas. La mezcla es la voz (más SFX sutiles si el estilo los usa). Solo agrega música si él la pide después en el chat."
+    : locked
+    ? `- La música es opcional y va debajo de la voz (−18 a −22 dB con ducking). La propuesta visual ya está aprobada: elige tú UNA pista según el «Brief prellenado» (Música) y la plantilla, sin pedir aprobación de música; si ayuda, publícala con show_media (no bloquea) y sigue. El usuario la juzga en el video final.`
     : `- La música es opcional y va debajo de la voz (−18 a −22 dB con ducking). Genera como máximo 2 variantes (audio_music variants ≤ 2).
 - Para que el usuario elija, publica SIEMPRE la MÚSICA SOLA (el archivo crudo de cada variante) y, si ayuda, una muestra de 15 s mezclada bajo su voz al nivel final (audio_music con preview_voice, p. ej. audio/voice.wav). Nunca publiques solo mezclas donde domina la voz: suenan igual que el audio original y no dejan juzgar la música.
 - En el resumen de request_approval (kind musica) di qué es cada archivo: "Variante A — música sola", "Variante A — muestra 15 s bajo tu voz (nivel final)", etc., con el carácter de cada variante en una línea.
@@ -210,8 +303,17 @@ export function buildSystemPrompt(p: Project, mode: ProductionMode, dir: string)
   const flags = flagsOf(p);
   const brandObj = activeBrand(p, flags);
   const brand = brandToPrompt(brandObj);
-  const tpl = brandObj ? " (de plantilla: se reemplaza por la marca)" : "";
+  // el preset de marca del scaffold ya dejó colores, acento de subtítulos y logo: no hay que reemplazarlos a mano
+  const preset = Boolean(brandObj) && brandPresetApplied(dir);
+  const presetNote = preset
+    ? (brandLogoInDir(dir)
+      ? "Los tokens de marca (colores, acento de subtítulos y logo en assets/brand/) ya están aplicados en el proyecto; no los cambies."
+      : "Los tokens de marca (colores y acento de subtítulos) ya están aplicados en el proyecto; no los cambies.")
+    : "";
+  const tpl = brandObj && !preset ? " (de plantilla: se reemplaza por la marca)" : "";
   const tplFonts = brandObj ? " (de plantilla: se reemplazan por las de la marca)" : "";
+  const locked = onlyFinalApproval(p, mode);
+  const prefill = briefPrefill(p, mode, brandObj, flags, style);
   const prev = previousMusic(p.id);
   const refs = fs.existsSync(REF) ? fs.readdirSync(REF).filter((f) => f.endsWith(".md")).map((f) => path.join(REF, f)) : [];
 
@@ -269,10 +371,10 @@ ${audioGuide(settings)}
 
 # Estilo elegido
 ${style ? `"${style.name}" (${style.kind}, origen ${style.origin}). ${cut(style.description, 400)}
-Guía completa y archivos del estilo: ${fs.existsSync(styleFile) ? styleFile : "docs/style/STYLE.md"} y la carpeta docs/style/. LÉELA antes de la guía de estilo del proyecto: su vocabulario de movimiento, ritmo, tipografía, color, sonido y subtítulos son la base; docs/style_guide.md la concreta para este video.${style.captionPreset ? ` Preset de subtítulos: ${style.captionPreset}.` : ""}${style.tokens.palette.length ? ` Paleta del estilo${tpl}: ${style.tokens.palette.join(", ")}.` : ""}${style.tokens.fonts.length ? ` Tipografías del estilo${tplFonts}: ${style.tokens.fonts.join(", ")}.` : ""}` : "Ninguno elegido: define el estilo con el usuario en la entrevista (ronda 3) y escríbelo en docs/style_guide.md. Si existe docs/style/STYLE.md, úsalo."}
+Guía completa y archivos del estilo: ${fs.existsSync(styleFile) ? styleFile : "docs/style/STYLE.md"} y la carpeta docs/style/. LÉELA antes de la guía de estilo del proyecto: su vocabulario de movimiento, ritmo, tipografía, color, sonido y subtítulos son la base; docs/style_guide.md la concreta para este video.${style.captionPreset ? ` Preset de subtítulos: ${style.captionPreset}.` : ""}${style.tokens.palette.length ? ` Paleta del estilo${tpl}: ${style.tokens.palette.join(", ")}.` : ""}${style.tokens.fonts.length ? ` Tipografías del estilo${tplFonts}: ${style.tokens.fonts.join(", ")}.` : ""}${presetNote ? ` ${presetNote}` : ""}` : "Ninguno elegido: define el estilo con el usuario en la entrevista (ronda 3) y escríbelo en docs/style_guide.md. Si existe docs/style/STYLE.md, úsalo."}
 
 # Guía de marca
-${brand || (flags?.useBrand === false ? "(el usuario eligió NO usar su marca en este video: usa los colores y tipografías del estilo tal cual)" : "(sin guía de marca: usa los colores y tipografías del estilo tal cual; si falta algo esencial como el CTA, pregúntalo según \"Arranque y preguntas\")")}
+${presetNote ? `${presetNote}\n` : ""}${brand || (flags?.useBrand === false ? "(el usuario eligió NO usar su marca en este video: usa los colores y tipografías del estilo tal cual)" : "(sin guía de marca: usa los colores y tipografías del estilo tal cual; si falta algo esencial como el CTA, pregúntalo según \"Arranque y preguntas\")")}
 
 # Prioridades (decide tú; no las preguntes)
 Si el usuario apagó «Usar mi marca» en este video, ningún color ni tipografía de la marca cuenta, aunque aparezca en el concepto aprobado: usa los del estilo.
@@ -280,11 +382,11 @@ Cuando dos fuentes no coincidan, manda la de arriba y sigue sin preguntar:
 1. Lo que el usuario dijo en el brief o en el chat.
 2. Guion y concepto aprobados.
 3. Guía de marca: paleta por rol, tipografías, voz, CTA y "No hacer" (nunca contradigas sus "No hacer").
-4. Estilo: movimiento, ritmo y layout. Sus colores y tipografías son marcadores de plantilla: ${brandObj ? "reemplázalos por los de la marca conservando los roles (fondo, texto, acento, contorno, tintes)" : "sin marca, úsalos tal cual"}.
+4. Estilo: movimiento, ritmo y layout. Sus colores y tipografías son marcadores de plantilla: ${brandObj ? (preset ? "los colores ya están reemplazados por los de la marca en film/index.html y timeline.json (captions.accent); las tipografías, reemplázalas por las de la marca" : "reemplázalos por los de la marca conservando los roles (fondo, texto, acento, contorno, tintes)") : "sin marca, úsalos tal cual"}.
 5. Valores por defecto de la casa (skill y guía del estilo).
 Si el acento de la marca no contrasta sobre el video, ajústalo tú (tinte más claro u oscuro, contorno o caja detrás del texto) y anótalo en el resumen final; nunca lo preguntes.
 
-${interviewGuide(p, mode, Boolean(brandObj))}
+${interviewGuide(p, mode, Boolean(brandObj), locked)}
 
 ${progressGuide(mode)}
 
@@ -296,8 +398,8 @@ ${progressGuide(mode)}
 
 # Datos del proyecto
 ${projectData(p, mode, flags)}
-
-${modeGuide(mode, flags)}`;
+${prefill ? `\n${prefill}\n` : ""}
+${modeGuide(mode, flags, locked)}`;
 }
 
 /** Etapas de la barra de progreso del modo: el agente marca cada inicio con mcp__studio__progress. */
@@ -311,7 +413,7 @@ ${list}
 }
 
 /** Cuánto preguntar al arrancar, según el modo y lo que ya trae el proyecto. Manda sobre INTERVIEW.md. */
-function interviewGuide(p: Project, mode: ProductionMode, brand: boolean): string {
+function interviewGuide(p: Project, mode: ProductionMode, brand: boolean, locked = false): string {
   if (mode === "talking" || hasApprovedBase(p)) {
     const have = [
       mode === "talking" ? "la grabación del creador" : "",
@@ -326,7 +428,10 @@ function interviewGuide(p: Project, mode: ProductionMode, brand: boolean): strin
 Este proyecto ya trae lo necesario (${have.join(", ")}): NO hagas la entrevista creativa.
 - Escribe brief.md con los datos del proyecto y de la marca, y marca la fuente de cada campo: (usuario), (guion), (concepto), (marca), (estilo) o (por defecto).
 - Solo preguntas que bloquean: como máximo UNA ronda de ask_user con ≤ 3 preguntas, y solo si falta el CTA (no está en brief, guion, concepto ni marca), si aparecen otras personas a cámara (confirma que dieron su consentimiento) o si hay un conflicto real entre lo que pidió el usuario y la marca. Si nada de eso aplica, no preguntes: sigue.${talk}
-- No pidas aprobación del brief por separado: va resumido en la misma aprobación del shotlist.`;
+${locked
+    ? `- brief.md sale del «Brief prellenado» (justo después de "Datos del proyecto"): cópialo con sus fuentes y completa solo lo que falte; no lo vuelvas a preguntar.
+- APROBACIONES (manda sobre el método y sobre "shotlist y APROBACIÓN"): el guion y la propuesta visual ya están aprobados. NO pidas aprobación del brief, del shotlist, del concepto, de la música ni de la voz: escribe el shotlist en docs/ para ti y sigue construyendo. La ÚNICA aprobación es la del video final: request_approval kind "final" con el render final. Puedes mostrar avances con show_media (no bloquea) si ayudan.`
+    : "- No pidas aprobación del brief por separado: va resumido en la misma aprobación del shotlist."}`;
   }
   return `# Arranque y preguntas (manda sobre INTERVIEW.md)
 - Entrevista corta: como máximo ${MAX_QUESTION_ROUNDS[mode]} rondas de ask_user con ≤ ${QUESTIONS_PER_ROUND} preguntas cada una (no las 4 × 4 de INTERVIEW.md).
@@ -338,8 +443,10 @@ export function buildKickoff(p: Project, mode: ProductionMode, brief?: string, f
   const what = mode === "reel" ? "un reel comercial" : mode === "clase" ? "una clase / video explicativo" : "el video con estilo a partir de mi grabación (talking head)";
   const f = flags ?? flagsOf(p);
   const answered = flagsText(p, f);
-  const start = mode === "talking" || hasApprovedBase(p)
-    ? `Empieza leyendo el skill y sus referencias y revisa lo que ya hay en el proyecto. Sin entrevista: escribe brief.md con los datos del proyecto y de la marca (marca la fuente de cada campo) y haz solo las preguntas que bloquean, como dice "Arranque y preguntas" del system prompt (como máximo una ronda de ≤ 3). No construyas nada antes de tener el shotlist aprobado.`
+  const start = onlyFinalApproval(p, mode)
+    ? `Empieza leyendo el skill y sus referencias y revisa lo que ya hay en el proyecto. Sin entrevista: el guion y la propuesta visual ya están aprobados. Escribe brief.md a partir del «Brief prellenado» del system prompt (con la fuente de cada campo) y haz solo las preguntas que bloquean (como máximo una ronda de ≤ 3). No pidas aprobación del brief, del shotlist, de la música ni de la voz: construye directo y pide solo la aprobación del video final (request_approval kind "final").`
+    : mode === "talking" || hasApprovedBase(p)
+    ? `Empieza leyendo el skill y sus referencias y revisa lo que ya hay en el proyecto. Sin entrevista: escribe brief.md con los datos del proyecto y de la marca${mode === "talking" ? " partiendo del «Brief prellenado» del system prompt" : ""} (marca la fuente de cada campo) y haz solo las preguntas que bloquean, como dice "Arranque y preguntas" del system prompt (como máximo una ronda de ≤ 3). No construyas nada antes de tener el shotlist aprobado.`
     : `Empieza leyendo el skill y sus referencias, revisa lo que ya hay en el proyecto y haz una entrevista corta (mcp__studio__ask_user, como máximo ${MAX_QUESTION_ROUNDS[mode]} rondas de ≤ ${QUESTIONS_PER_ROUND} preguntas, sin repetir lo que ya responden el proyecto, la marca o lo de abajo). No construyas nada antes de tener el brief confirmado y el shotlist aprobado.`;
   return `Vamos a producir ${what} para el proyecto "${p.title}".${brief?.trim() ? `\n\nMi idea / brief inicial:\n${brief.trim()}` : ""}${answered ? `\n\n${answered}` : ""}
 

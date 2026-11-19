@@ -63,7 +63,7 @@ function App() {
       </SidebarProvider>
       <CommandHotkey />
       <LeaveDialog />
-      {newProject ? <OverlayBoundary key={JSON.stringify(newProject)} onError={() => { closeNewProject(); toast("No se pudo abrir «Nuevo video». Si acabas de actualizar Andoo, recarga la página.", true); }}><Suspense fallback={null}><NewProjectDialog initialTitle={newProject.title} initialKind={newProject.kind} onClose={closeNewProject} /></Suspense></OverlayBoundary> : null}
+      {newProject ? <OverlayBoundary key={JSON.stringify(newProject)} onError={() => { closeNewProject(); toast("No se pudo abrir «Nuevo video». Si acabas de actualizar Andoo, recarga la página.", true); }}><Suspense fallback={null}><NewProjectDialog initialTitle={newProject.title} initialKind={newProject.kind} initialStyleId={newProject.styleId} onClose={closeNewProject} /></Suspense></OverlayBoundary> : null}
       <Toaster position="bottom-right" closeButton />
     </TooltipProvider>
   );

@@ -470,8 +470,7 @@ function StyleDetail({ sel, running, reload, startJob }: {
   };
   const onUse = () => {
     const k: ProjectKind = sel.kind === "clase" ? "clase" : sel.kind === "talking" ? "talking" : "reel";
-    openNewProject({ kind: k });
-    toast(`Elige «${sel.name}» en el paso Estilo`);
+    openNewProject({ kind: k, styleId: sel.id });
   };
   const copyHex = (hex: string) => {
     const h = hex.startsWith("#") ? hex : `#${hex}`;

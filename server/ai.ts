@@ -168,6 +168,7 @@ export async function usageSummary({ force = false }: { force?: boolean } = {}):
     byModel,
     recent: db.usage.slice(-60).reverse(),
     keySet: hasKey(s.provider),
+    anthropicKeySet: Boolean(s.apiKey || process.env.ANTHROPIC_API_KEY),
   };
 }
 

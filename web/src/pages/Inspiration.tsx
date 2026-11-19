@@ -5,7 +5,7 @@ import type { InspoCollection, InspoResponse, InspoVideo, Job, Project } from ".
 import { api } from "../api.ts";
 import { useApp, usePoll } from "../store.tsx";
 import { fmtN } from "../ui.tsx";
-import { AnalysisView } from "./project/AnalysisStage.tsx";
+import { AnalysisView } from "./project/AnalysisView.tsx";
 
 type ListVideo = InspoResponse["videos"][number];
 interface Filters { account: string; period: string; min: string; sort: string; q: string; coll: string }
@@ -255,7 +255,7 @@ function VideoDrawer({ vid, collections, onCollToggled, onClose }: { vid: string
             <JobLine job={v.job} />
           </div>
         </div>
-        {v.analysis ? <AnalysisView a={v.analysis} frames={v.frameUrls || []} /> : <p className="small muted" style={{ marginTop: 14 }}>Analizar descarga el video, extrae fotogramas, transcribe y la IA lo descompone (consume IA). Si lo llevas a producción ya analizado, el proyecto arranca directo en Guion.</p>}
+        {v.analysis ? <AnalysisView a={v.analysis} frames={v.frameUrls || []} /> : <p className="small muted" style={{ marginTop: 14 }}>Analizar descarga el video, extrae fotogramas, transcribe y la IA lo descompone (consume IA). Si lo llevas a producción ya analizado, el proyecto arranca directo en «Idea y guion».</p>}
       </div>
     </div>
   );

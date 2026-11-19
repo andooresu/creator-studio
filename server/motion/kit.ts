@@ -168,16 +168,43 @@ export function ensureLinks(dir: string): void {
   if (fs.existsSync(VENV)) symlink(VENV, path.join(dir, ".venv"));
 }
 
+/** Opciones del scaffold (solo se aplican al preparar una carpeta nueva; una carpeta ya completa no se toca). */
+export interface ScaffoldOpts {
+  style?: Style | null;
+  /** carpeta con preset.jsonc: se aplica con scripts/preset.mjs (colores, marca, brief) */
+  presetDir?: string;
+  /** se mezcla en timeline.json tras el preset y antes de sync.mjs (objetos: un nivel; valores undefined se ignoran) */
+  timelinePatch?: Record<string, unknown>;
+  /** archivos a copiar dentro de la carpeta (rel relativo a ella; p. ej. el logo de la marca en assets/brand/) */
+  extraFiles?: { from: string; rel: string }[];
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+
+/** Mezcla un parche en timeline.json (un nivel de profundidad para objetos como captions). */
+function patchTimeline(dir: string, patch: Record<string, unknown>): void {
+  const file = path.join(dir, "timeline.json");
+  const tl = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (isObj(v)) {
+      const clean = Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined));
+      tl[k] = isObj(tl[k]) ? { ...tl[k], ...clean } : clean;
+    } else tl[k] = v;
+  }
+  fs.writeFileSync(file, JSON.stringify(tl, null, 2) + "\n");
+}
+
 /**
  * Crea data/projects/<pid>/motion como motion/scripts/init.sh. Si ya está completa (marcador .scaffolded), solo repara
  * los symlinks y la devuelve. Si quedó a medias (falló un paso), vuelve a hacer el scaffold completo.
  */
-export function scaffoldMotion(p: Project, opts: { style?: Style | null; presetDir?: string } = {}): string {
+export function scaffoldMotion(p: Project, opts: ScaffoldOpts = {}): string {
   return scaffoldDir(path.join(projectDir(p.id), "motion"), `proyecto ${p.id}`, opts);
 }
 
 /** Igual que scaffoldMotion pero en cualquier carpeta (p. ej. la carpeta temporal de la vista previa de un estilo). */
-export function scaffoldDir(dir: string, owner: string, opts: { style?: Style | null; presetDir?: string } = {}): string {
+export function scaffoldDir(dir: string, owner: string, opts: ScaffoldOpts = {}): string {
   if (isScaffolded(dir)) { ensureLinks(dir); return dir; }
   fs.rmSync(path.join(dir, SCAFFOLD_MARKER), { force: true });
 
@@ -202,7 +229,29 @@ export function scaffoldDir(dir: string, owner: string, opts: { style?: Style | 
     const r = spawnSync(process.execPath, args, { cwd: dir, stdio: "pipe", timeout: 120_000 });
     if (r.status !== 0) throw new Error(`Falló "node ${args.join(" ")}" al preparar el motor: ${String(r.stderr || r.stdout).slice(-600)}`);
   };
-  if (opts.presetDir) node([path.join(dir, "scripts", "preset.mjs"), path.resolve(opts.presetDir), dir]);
+  for (const f of opts.extraFiles || []) {
+    const to = path.resolve(dir, f.rel);
+    if (!to.startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(f.from)) continue; // sin salir de la carpeta
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(f.from, to);
+  }
+  if (opts.presetDir) {
+    // preset.mjs reescribe a Helvetica local el @font-face de cada rol sin archivo en el preset: si el preset no trae
+    // fuentes, se dejan las líneas originales (como sin preset) para que el productor apunte después a las de la marca
+    const html = path.join(dir, "film", "index.html");
+    const before = fs.existsSync(html) ? fs.readFileSync(html, "utf8") : null;
+    node([path.join(dir, "scripts", "preset.mjs"), path.resolve(opts.presetDir), dir]);
+    if (before !== null && fs.existsSync(html)) {
+      let src = fs.readFileSync(html, "utf8");
+      for (const role of ["display", "ui"]) {
+        const orig = `src: url(../assets/fonts/${role}.woff2) format('woff2');`;
+        const rewritten = `src: local('Helvetica Neue'), local('HelveticaNeue'), local('Arial'); /* no font in preset: replace with url(../assets/fonts/${role}.woff2) */`;
+        if (before.includes(orig) && src.includes(rewritten)) src = src.replace(rewritten, orig);
+      }
+      fs.writeFileSync(html, src);
+    }
+  }
+  if (opts.timelinePatch && Object.keys(opts.timelinePatch).length) patchTimeline(dir, opts.timelinePatch);
   node(["film/lib/motion.test.js"]);
   node(["scripts/sync.mjs"]);
   fs.writeFileSync(path.join(dir, SCAFFOLD_MARKER), `ok ${new Date().toISOString()}\n`);

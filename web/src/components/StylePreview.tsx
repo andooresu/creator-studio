@@ -76,9 +76,13 @@ interface Props {
   label?: string;
   /** muestra el ▶ sobre el póster (por defecto sí) */
   badge?: boolean;
+  /** reproduce cuando el botón o enlace que la contiene recibe el foco del teclado (por defecto sí). En una lista de
+   *  opciones dentro de un diálogo va en false: el <video> que se monta y desmonta con el foco rompía el orden del
+   *  tabulador (el foco caía al body y el diálogo lo devolvía al inicio) */
+  focusPlay?: boolean;
 }
 
-export function StyleThumb({ sid, preview, palette = [], version, autoPlay, playing, controls, aspect = "9 / 16", style, label, badge = true }: Props) {
+export function StyleThumb({ sid, preview, palette = [], version, autoPlay, playing, controls, aspect = "9 / 16", style, label, badge = true, focusPlay = true }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [hover, setHover] = useState(false);
@@ -114,13 +118,14 @@ export function StyleThumb({ sid, preview, palette = [], version, autoPlay, play
   // foco del teclado: solo si la miniatura va dentro de un enlace o botón (que ya es enfocable)
   useEffect(() => {
     const host = boxRef.current?.closest("a, button");
-    if (!host) return;
+    if (!host || !focusPlay) return;
     const on = () => setFocused(true);
-    const off = () => setFocused(false);
+    // el foco que pasa a algo dentro del mismo botón o enlace no cuenta como salir
+    const off = (e: Event) => { const to = (e as FocusEvent).relatedTarget; if (!(to instanceof Node && host.contains(to))) setFocused(false); };
     host.addEventListener("focus", on);
     host.addEventListener("blur", off);
     return () => { host.removeEventListener("focus", on); host.removeEventListener("blur", off); };
-  }, [video, poster, boxEl]);
+  }, [video, poster, boxEl, focusPlay]);
 
   // toque en pantallas táctiles (o clic con movimiento reducido): alterna la reproducción
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -167,6 +172,10 @@ export function StyleThumb({ sid, preview, palette = [], version, autoPlay, play
           playsInline
           preload={active || autoPlay ? "auto" : "none"}
           controls={controls}
+          // sin controles es decorativo: nunca una parada del tabulador (si recibiera el foco y se desmontara al perder
+          // el del botón, el foco caería al body y el diálogo lo devolvería al inicio: trampa de teclado)
+          tabIndex={controls ? undefined : -1}
+          aria-hidden={controls ? undefined : true}
           autoPlay={autoPlay && !reduced}
           onError={() => setFailed(true)}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}

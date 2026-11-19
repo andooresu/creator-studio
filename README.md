@@ -35,20 +35,21 @@ Primeros pasos dentro de Andoo:
 - **⌘K** (Ctrl K en Windows/Linux): buscar proyectos, estilos y secciones, o crear un proyecto nuevo.
 - **⌘B** (Ctrl B): contraer o expandir la barra lateral.
 
-## Flujo
-1. **Referencias**: pega links (IG/TikTok/Shorts) o sube el video, con notas sobre qué quieres tomar.
-2. **Análisis**: se descarga la referencia, se extraen fotogramas y la IA descompone hook, estructura, retención, edición y cómo adaptarlo a tu marca.
-3. **Guion**: la IA escribe con tu voz (según tu guía de marca). Lo editas, pides cambios, eliges el hook y **apruebas**.
-4. **Grabación**: recomendaciones (plano, luz, audio, tomas, B-roll), checklist y teleprompter. Subes el video o lo eliges de tu carpeta de crudos.
-5. **Propuesta visual**: la IA ve tu grabación y propone subtítulos, paleta, zooms/B-roll, música y portada. **Apruebas**.
-6. **Edición**:
-   - **Elegir tomas**: whisper transcribe la grabación, la IA detecta frases repetidas, arranques en falso y muletillas, y marca la mejor toma de cada frase. Tú revisas (puedes escuchar cada una) y ajustas.
-   - **Renderizar**: corta solo las frases marcadas (los cortes caen en silencios reales), reencuadra a 9:16 1080×1920, deja el audio a -14 LUFS y genera subtítulos palabra a palabra. Sin selección de tomas, corta por silencios.
-   - Genera `edit-brief.md` para un pulido avanzado con Claude Code + Remotion/HyperFrames. **Apruebas**.
-7. **Publicación**: caption, hashtags, portada, primer comentario y estrategia de Trial Reel.
+## Flujo (video a cámara, 5 pasos)
+Al crear el video, en una sola pantalla, eliges la plantilla (ya viene una preseleccionada), escribes el objetivo, pegas links de referencia si quieres y, si tienes clave de IA, la app escribe el guion al crear.
+
+1. **Idea y guion**: tus links y el objetivo. Si hay links, se descargan, se extraen fotogramas y la IA analiza hook, estructura, retención y edición (el análisis queda en un panel al lado). La IA escribe el guion con tu voz (según tu guía de marca). Lo editas, pides cambios, eliges el hook y **apruebas**.
+2. **Grabación**: recomendaciones (plano, luz, audio, tomas, B-roll), checklist y teleprompter. Subes el video o lo eliges de tu carpeta de crudos.
+3. **Propuesta visual**: la IA ve tu grabación y propone subtítulos, paleta, zooms/B-roll, música y portada. Al **aprobar**, ves el costo estimado y el tope, y arranca la edición sola.
+4. **Edición**, un solo camino:
+   - Elige las mejores tomas (whisper + IA), corta en silencios reales, reencuadra a 9:16 y deja el audio a -14 LUFS.
+   - Luego el productor arma el video con la plantilla elegida, con tu marca ya aplicada (colores, acento de subtítulos y logo) y un brief prellenado, sin volver a preguntarte. La única aprobación es la del video final.
+   - Ves el resultado con **Aprobar video** o **Ajustar**. Con «Solo corte rápido» obtienes un corte gratis sin plantilla.
+   - En «Avanzado» quedan la selección manual de tomas, volver a cortar, producir de nuevo con otra plantilla y el texto para un pulido con Claude Code.
+5. **Publicación**: caption, hashtags, portada, primer comentario y estrategia de Trial Reel.
 
 ## Tres tipos de video
-- **Talking head propio**: el flujo por etapas de arriba. En Edición puedes además pedir un **render con estilo** al motor de video (subtítulos animados, zooms, gráficos según el estilo).
+- **Talking head propio**: el flujo de 5 pasos de arriba. La plantilla la aplica el motor de video (subtítulos animados, zooms, gráficos según el estilo).
 - **Reel comercial** y **Clase o explicador**: los produce el **motor de video** con un agente de Claude que trabaja como una sesión de producción:
   1. Entrevista creativa (las preguntas aparecen en la app).
   2. Música original para elegir de oído y rejilla de beats.

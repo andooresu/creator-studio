@@ -1,6 +1,7 @@
-// 1. Referencias: un solo campo para pegar links (cada uno se vuelve un chip con nota opcional),
-// objetivo del video en una línea editable y un botón que guarda, analiza y escribe el guion.
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
+// Referencias y objetivo (paso «Idea y guion»): un solo campo para pegar links (cada uno se vuelve un chip con nota
+// opcional), objetivo del video en una línea editable y un botón que guarda, analiza y escribe el guion.
+// `embedded`: sin tarjeta ni título propios (va dentro del panel lateral, junto al guion).
+import { useEffect, useId, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
 import { ArrowRight, Check, LoaderCircle, Pencil, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button.tsx";
 import { LinkChip, extractUrls, platformOf, urlKey } from "@/components/LinkChips.tsx";
@@ -14,7 +15,7 @@ interface Pending { key: string; url: string; note: string }
 
 const HINT_BAD = "Eso no parece un link. Pega la dirección completa del video (https://…).";
 
-export function RefsStage({ p, running, run, setProject }: StageProps) {
+export function RefsEditor({ p, running, run, setProject, embedded = false }: StageProps & { embedded?: boolean }) {
   const { refresh, toast, act } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -159,20 +160,28 @@ export function RefsStage({ p, running, run, setProject }: StageProps) {
   const goalOnly = !total && Boolean(goal.trim());
   const onPrimary = () => { if (p.script) setConfirmReplace(true); else void onAnalyze(); };
   const working = busy || running;
-  const hintId = "refs-link-hint";
+  // ids únicos: el editor puede aparecer en el panel lateral y no debe chocar con otros campos
+  const uid = useId().replace(/:/g, "");
+  const linkId = `refs-link-${uid}`;
+  const goalId = `refs-goal-${uid}`;
+  const hintId = `refs-link-hint-${uid}`;
 
   return (
-    <div className="card mx-auto w-full max-w-3xl">
-      <h2>Referencias</h2>
-      <p className="muted small">Videos que quieres copiar, emular o que te inspiran.</p>
+    <div className={embedded ? "min-w-0" : "card mx-auto w-full max-w-3xl"}>
+      {embedded ? null : (
+        <>
+          <h2>Idea y referencias</h2>
+          <p className="muted small">Pega videos que quieres copiar, emular o que te inspiran, o escribe el objetivo. La IA escribe tu guion con tu marca.</p>
+        </>
+      )}
 
       {/* Campo principal: pegar o escribir + Enter */}
-      <label htmlFor="refs-link" className="mt-4! text-sm! text-foreground!">
+      <label htmlFor={linkId} className={embedded ? "mt-0! text-sm! text-foreground!" : "mt-4! text-sm! text-foreground!"}>
         Pega el link de un video que te guste (Instagram, TikTok, YouTube…)
       </label>
       <div className="flex gap-2">
         <input
-          id="refs-link"
+          id={linkId}
           ref={inputRef}
           type="url"
           inputMode="url"
@@ -249,10 +258,10 @@ export function RefsStage({ p, running, run, setProject }: StageProps) {
       <div className="mt-4 border-t border-[var(--line)] pt-3">
         {editingGoal ? (
           <div>
-            <label htmlFor="refs-goal" className="mt-0!">Objetivo de este video</label>
+            <label htmlFor={goalId} className="mt-0!">Objetivo de este video</label>
             <div className="flex gap-2">
               <input
-                id="refs-goal"
+                id={goalId}
                 autoFocus
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
@@ -283,10 +292,10 @@ export function RefsStage({ p, running, run, setProject }: StageProps) {
       </div>
 
       {/* Acción principal */}
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <Button size="lg" className="w-full sm:w-auto" disabled={working || (!total && !goalOnly) || confirmReplace} onClick={onPrimary}>
+      <div className={embedded ? "mt-4 flex flex-col gap-2" : "mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"}>
+        <Button size={embedded ? "default" : "lg"} variant={embedded ? "secondary" : "default"} className={embedded ? "w-full whitespace-normal" : "w-full sm:w-auto"} disabled={working || (!total && !goalOnly) || confirmReplace} onClick={onPrimary}>
           {working ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
-          {goalOnly ? "Escribir guion desde el objetivo" : p.analysis ? "Volver a analizar y escribir" : "Analizar y escribir guion"}
+          {goalOnly ? (p.script ? "Volver a escribir desde el objetivo" : "Escribir guion desde el objetivo") : p.analysis || p.script ? "Volver a analizar y escribir" : "Analizar y escribir guion"}
           {working ? null : <ArrowRight aria-hidden />}
         </Button>
         <span className="small muted">

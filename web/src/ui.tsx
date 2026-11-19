@@ -11,11 +11,17 @@ export const fmtN = (n: number | null | undefined): string => {
 export const fmtT = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 export const STAGE_LABEL: Record<Stage | "tomas", string> = {
-  tomas: "Selección de tomas", referencias: "Referencias", analisis: "Análisis", guion: "Guion", grabacion: "Grabación",
+  tomas: "Selección de tomas", idea: "Idea y guion", grabacion: "Grabación",
   concepto: "Propuesta visual", edicion: "Edición", publicacion: "Publicación", publicado: "Publicado",
 };
-/** Las 7 etapas que se muestran en el stepper del proyecto. */
-export const STEPS: Stage[] = ["referencias", "analisis", "guion", "grabacion", "concepto", "edicion", "publicacion"];
+/** Los 5 pasos que se muestran en el stepper del proyecto a cámara. */
+export const STEPS: Stage[] = ["idea", "grabacion", "concepto", "edicion", "publicacion"];
+/** Nombre de un trabajo en segundo plano según su tipo (job.stage), para banners y avisos. */
+const JOB_LABEL: Record<string, string> = {
+  analisis: "Análisis de referencias", guion: "Guion", concepto: "Propuesta visual", tomas: "Selección de tomas",
+  edicion: "Edición", render: "Exportación", publicacion: "Paquete de publicación", publicar: "Paquete de publicación",
+};
+export const jobLabel = (stage: string): string => JOB_LABEL[stage] || STAGE_LABEL[stage as Stage] || stage;
 export const STAGE_NAME_AI: Record<string, string> = {
   analisis: "Análisis", guion: "Guion", concepto: "Propuesta visual", publicar: "Publicación", branding: "Marca", inspiracion: "Inspiración", edicion: "Selección de tomas",
 };

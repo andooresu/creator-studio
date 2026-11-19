@@ -13,7 +13,11 @@ Rutas de datos en `server/db.ts`: `MOTION_DIR` (kit incluido en la app), `STYLES
 ## server/motion/kit.ts (módulo "motion-kit")
 ```ts
 export function motionEnv(): MotionEnv
-export function scaffoldMotion(p: Project, opts: { style?: Style | null; presetDir?: string }): string // crea data/projects/<pid>/motion (como motion/scripts/init.sh), copia archivos del estilo a docs/style/, devuelve la carpeta
+export interface ScaffoldOpts { style?: Style | null; presetDir?: string; timelinePatch?: Record<string, unknown>; extraFiles?: { from: string; rel: string }[] }
+export function scaffoldMotion(p: Project, opts?: ScaffoldOpts): string // crea data/projects/<pid>/motion (como motion/scripts/init.sh), copia archivos del estilo a docs/style/, devuelve la carpeta
+export function scaffoldDir(dir: string, owner: string, opts?: ScaffoldOpts): string // igual en cualquier carpeta
+// Solo en carpeta nueva, en orden: estilo → extraFiles → preset.mjs (si el preset no trae fuentes, se conservan los @font-face
+// originales de film/index.html) → timelinePatch (objetos mezclados a un nivel, p. ej. captions) → motion.test.js → sync.mjs
 export function styleDir(style: Style): string // motion/styles/<id> si origin === "base", si no data/styles/<id>
 export async function runMotion(dir: string, cmd: "node" | "python", args: string[], opts?: { onLine?: (l: string) => void; heavy?: boolean; timeoutMs?: number }): Promise<{ code: number; out: string }>
 // heavy=true → cola global: un solo render pesado a la vez en toda la app
@@ -25,15 +29,21 @@ export function mediaUrl(pid: string, relInMotion: string): string // "/media/<p
 ## server/agent/* (módulo "producer")
 - `runner.ts`
 ```ts
-export function startProduction(p: Project, opts: { mode: "reel" | "clase" | "talking"; brief?: string }): void // scaffold si falta, arranca query() del SDK en segundo plano
+export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "talking"; brief?: string; changeMode?: boolean; restyle?: boolean; flags?: unknown; capUsd?: number; notice?: string }): void // notice: aviso de la app para el agente (p. ej. «hay un corte nuevo»); scaffold si falta (talking + marca activa: preset de marca), arranca query() del SDK en segundo plano
+export function productionPreflight(): void // lanza los mismos errores que startProduction (API key de Anthropic, entorno de Python) sin arrancar nada
+// Al pasar la producción a "done" con un render final, Project.editRun.state "plantilla" → "listo".
 export function sendMessage(p: Project, text: string): void   // feedback libre del usuario → reanuda la sesión (resume: sessionId)
 export function answerQuestion(p: Project, questionId: string, answers: Record<string, string>): void
 export function decideApproval(p: Project, approvalId: string, approved: boolean, feedback?: string): void
 export function stopProduction(p: Project): void
+export function currentRenders(p: Project, prod?: Production | null): RenderOutput[] // renders de la corrida actual (posteriores a editRun.startedAt o a la grabación)
+export function resetProductionForNewRecording(p: Project): void // grabación nueva: detiene y olvida sesión y renders
+export function approveFinalFromEdit(p: Project): boolean // «Aprobar video» cuenta como la aprobación final pendiente
 ```
 - `tools.ts`: servidor MCP en proceso (`createSdkMcpServer`, nombre `studio`) con herramientas: `ask_user` (preguntas con opciones, bloquea hasta respuesta), `request_approval` (puerta: shotlist, música, borrador, final), `show_media` (publica audio/video/imagen en la sesión), `elevenlabs_music`, `elevenlabs_tts`, `elevenlabs_sfx`, `elevenlabs_voices`, `render` (borrador/final vía kit), `sheet`.
 - `elevenlabs.ts`: API REST de ElevenLabs con la key de Ajustes (`settings.elevenlabsKey`).
-- `prompt.ts`: arma el system prompt: rol, ruta del skill de referencia (`<APP>/motion/skill/SKILL.md` y `reference/*.md`, leídos por el agente), guía del estilo, guía de marca (`brandToPrompt`), datos del proyecto (guion, grabación, tomas, palabras), adaptadores (usar `mcp__studio__*` en lugar de AskUserQuestion / herramientas MCP de ElevenLabs), reglas de la app.
+- `brandPreset.ts`: `brandPresetFor(p, flags, style)` → preset temporal (colores de la marca por rol, acento de subtítulos, logo de la marca → `assets/brand/logo.<ext>`) para el scaffold nuevo de talking; null sin marca activa. `cleanup()` borra la carpeta temporal.
+- `prompt.ts`: `briefPrefill(p, mode, brand, flags, style)` (bloque «Brief prellenado» de talking, tras «Datos del proyecto») y `onlyFinalApproval(p, mode)` (talking con guion y propuesta aprobados: `request_approval` solo acepta kind "final"); arma el system prompt: rol, ruta del skill de referencia (`<APP>/motion/skill/SKILL.md` y `reference/*.md`, leídos por el agente), guía del estilo, guía de marca (`brandToPrompt`), datos del proyecto (guion, grabación, tomas, palabras), adaptadores (usar `mcp__studio__*` en lugar de AskUserQuestion / herramientas MCP de ElevenLabs), reglas de la app.
 - Costo: cada resultado del SDK (`total_cost_usd`, `usage`) se registra en `db.usage` con `stage: "produccion"` y se suma a `Production.costUsd`.
 
 ## server/styles/* (módulo "styles")
@@ -53,8 +63,8 @@ Routers Express que `server/index.ts` monta: `motionRouter` (server/routes/motio
 |---|---|---|---|
 | GET | /api/motion/env | – | MotionEnv |
 | POST | /api/projects/:id/motion/render | `{mode, formats}` | Project (job en segundo plano; resultados en `production.renders`) |
-| POST | /api/projects/:id/production/start | `{mode?: "reel"\|"clase"\|"talking", brief?}` | Project |
-| POST | /api/projects/:id/production/message | `{text}` | Project |
+| POST | /api/projects/:id/production/start | `{mode?: "reel"\|"clase"\|"talking", brief?, styleId?, flags?, capUsd?, newRun?}` (newRun: corrida nueva de plantilla desde Edición → editRun "plantilla", limpia finalVideo/editApproved y, si hay sesión, avisa al agente que entregue un render final nuevo) | Project |
+| POST | /api/projects/:id/production/message | `{text}` (talking con editRun ya listo, corte rápido o aprobado: corrida nueva de plantilla, como newRun) | Project |
 | POST | /api/projects/:id/production/answer | `{questionId, answers}` | Project |
 | POST | /api/projects/:id/production/approve | `{approvalId, approved, feedback?}` | Project |
 | POST | /api/projects/:id/production/stop | – | Project |

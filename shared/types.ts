@@ -4,8 +4,14 @@ import type { Analysis, Script, Concept, Publish, BrandGuide } from "./schemas.t
 
 export type Provider = "anthropic" | "openai";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
-export type Stage = "referencias" | "analisis" | "guion" | "grabacion" | "concepto" | "edicion" | "publicacion" | "publicado";
-export const STAGES: Stage[] = ["referencias", "analisis", "guion", "grabacion", "concepto", "edicion", "publicacion", "publicado"];
+/**
+ * Etapas del flujo a cámara (entrega 3: 5 pasos). "idea" junta lo que antes eran Referencias, Análisis y Guion.
+ * "publicado" no es un paso del stepper: se ve en Publicación.
+ */
+export type Stage = "idea" | "grabacion" | "concepto" | "edicion" | "publicacion" | "publicado";
+export const STAGES: Stage[] = ["idea", "grabacion", "concepto", "edicion", "publicacion", "publicado"];
+/** Etapas guardadas por versiones anteriores; db.ts las migra a "idea" al cargar. */
+export const LEGACY_IDEA_STAGES = ["referencias", "analisis", "guion"] as const;
 
 /** Secciones que llaman a la IA (cada una con su modelo configurable). */
 export type AiStage = "analisis" | "guion" | "concepto" | "edicion" | "publicar" | "branding" | "inspiracion" | "estilos";
@@ -120,6 +126,32 @@ export interface EditResult {
   transcribed: boolean;
   at: string;
 }
+/** Pedido del camino de edición por defecto. quick=true: solo corte rápido (ffmpeg, sin plantilla ni costo del productor). */
+export interface EditRunRequest {
+  quick?: boolean;
+  /** plantilla (estilo kind talking/any); por defecto p.styleId o la primera plantilla a cámara */
+  styleId?: string | null;
+  flags?: { useBrand?: boolean; music?: boolean; formats?: Format[] };
+  /** tope de costo del productor para este video (como en production/start) */
+  capUsd?: number;
+}
+export interface EditRun {
+  quick: boolean;
+  styleId: string | null;
+  flags?: EditRunRequest["flags"];
+  capUsd?: number;
+  /** "corte": corre el trabajo de tomas + corte; "plantilla": el productor está trabajando; "listo": hay resultado; "error" */
+  state: "corte" | "plantilla" | "listo" | "error";
+  error?: string;
+  startedAt: string;
+}
+export interface FinalVideo {
+  /** ruta relativa a la carpeta del proyecto (se sirve en /media/<pid>/<path>) */
+  path: string;
+  source: "plantilla" | "rapido";
+  fmt?: Format;
+  at: string;
+}
 /** Tipo de video: talking head grabado (flujo por etapas), reel comercial o clase/explicador (motor de video). */
 export type ProjectKind = "talking" | "reel" | "clase";
 
@@ -168,6 +200,10 @@ export interface Project extends Jobbable {
   editPlan?: EditPlan | null;
   edit?: EditResult | null;
   editApproved?: boolean;
+  /** camino de edición por defecto (entrega 3): tomas → corte → plantilla, lanzado al aprobar la propuesta o con «Editar video» */
+  editRun?: EditRun | null;
+  /** video aprobado en Edición: lo que usa Publicación (ruta relativa a la carpeta del proyecto) */
+  finalVideo?: FinalVideo | null;
   publish?: Publish | null;
   published?: { url: string; at: string; trial: boolean } | null;
   createdAt: string;
@@ -285,6 +321,8 @@ export interface UsageSummary {
   byModel: Record<string, number>;
   recent: UsageRow[];
   keySet: boolean;
+  /** hay clave de Anthropic (la necesita el productor de la plantilla, aunque el proveedor elegido sea otro) */
+  anthropicKeySet?: boolean;
 }
 
 // ---------- Herramientas locales ----------
@@ -416,6 +454,8 @@ export interface Production {
   liveUsd?: number;
   /** tope de este video en US$; 0 o sin definir = el de Ajustes (maxCostPerVideo) */
   capUsd?: number;
+  /** costUsd ya gastado al cargar la grabación actual: el tope cuenta solo lo gastado desde entonces (costUsd sigue siendo el total) */
+  capBaseUsd?: number;
   /** rondas de preguntas ya hechas y máximo de rondas de esta producción */
   questionRounds?: number;
   maxQuestionRounds?: number;

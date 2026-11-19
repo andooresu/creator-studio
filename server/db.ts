@@ -6,7 +6,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { emitChange } from "./events.ts";
-import type { DB, Settings, Brand, Project, Jobbable, AiStage } from "../shared/types.ts";
+import { STAGES, LEGACY_IDEA_STAGES } from "../shared/types.ts";
+import type { DB, Settings, Brand, Project, Jobbable, AiStage, Stage } from "../shared/types.ts";
 
 // Rutas relativas a la app (no al directorio desde donde se lance). STUDIO_DATA_DIR permite aislar pruebas.
 export const APP_DIR = path.resolve(import.meta.dirname, "..");
@@ -126,7 +127,15 @@ export function migrate(raw: RawDB): DB {
   }
   delete (s as RawSettings).brand;
   delete (s as RawSettings).monthlyBudget;
+  for (const p of db.projects) p.stage = migrateStage(p.stage);
   return db;
+}
+
+/** Entrega 3: Referencias, Análisis y Guion se unieron en «Idea y guion» ("idea"). Cualquier etapa desconocida también
+ *  vuelve a "idea". Idempotente (una etapa válida queda igual). */
+export function migrateStage(raw: unknown): Stage {
+  if ((LEGACY_IDEA_STAGES as readonly unknown[]).includes(raw)) return "idea";
+  return (STAGES as unknown[]).includes(raw) ? (raw as Stage) : "idea";
 }
 
 // ---------- SQLite ----------

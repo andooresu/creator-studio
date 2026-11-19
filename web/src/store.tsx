@@ -20,7 +20,7 @@ export function parseHash(hash: string): Route {
   }
 }
 
-export interface NewProjectRequest { title?: string; kind?: ProjectKind }
+export interface NewProjectRequest { title?: string; kind?: ProjectKind; styleId?: string }
 
 // ---------- Actualizaciones en vivo ----------
 // Una sola conexión (Server-Sent Events) a /api/events. El servidor solo dice qué cambió ("projects:<id>",

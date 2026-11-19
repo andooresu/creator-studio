@@ -1,4 +1,4 @@
-// 7. Publicación: paquete (caption, portada, primer comentario), estrategia Trial Reel,
+// 5. Publicación: paquete (caption, portada, primer comentario), estrategia Trial Reel,
 // pasos de subida manual y link del reel publicado.
 import { useEffect, useState } from "react";
 import { ArrowRight, Check, Copy, Sparkles } from "lucide-react";
@@ -10,6 +10,8 @@ import type { StageProps } from "./contract.ts";
 export function PublishStage({ p, running, run, goStage }: StageProps) {
   const { toast } = useApp();
   const k = p.publish;
+  // video final: el aprobado en Edición (plantilla o corte rápido); proyectos anteriores usan el corte
+  const video = p.finalVideo?.path ?? p.edit?.final ?? null;
   const savedUrl = p.published?.url ?? "";
   const [url, setUrl] = useState(savedUrl);
   useEffect(() => { setUrl(savedUrl); }, [savedUrl]);
@@ -26,9 +28,9 @@ export function PublishStage({ p, running, run, goStage }: StageProps) {
           <p className="small muted">Caption, hashtags, portada y estrategia para lanzarlo como <b>Trial Reel</b> (se muestra primero a no seguidores).</p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <Button variant={k ? "secondary" : "default"} disabled={running} onClick={() => { run("publish-pack").catch(() => {}); }}><Sparkles aria-hidden />{packRunning ? "Preparando…" : k ? "Regenerar paquete" : "Generar paquete"}</Button>
-            {!p.edit?.final ? <Button variant="ghost" onClick={() => goStage("edicion")}>Ir a Edición<ArrowRight aria-hidden /></Button> : null}
+            {!video ? <Button variant="ghost" onClick={() => goStage("edicion")}>Ir a Edición<ArrowRight aria-hidden /></Button> : null}
           </div>
-          {!p.edit?.final ? <p className="small muted mt-2">Aún no tienes el video final. Puedes preparar el paquete, pero necesitarás el MP4 para subirlo.</p> : null}
+          {!video ? <p className="small muted mt-2">Aún no tienes el video final. Puedes preparar el paquete, pero necesitarás el MP4 para subirlo.</p> : null}
           {packRunning ? <div className="mt-2 flex items-center gap-2.5" role="status" aria-live="polite"><div className="spinner" /><p className="small muted m-0">La IA está preparando el paquete (empieza solo al aprobar la edición)…</p></div> : null}</div>
         {k ? (
           <>
@@ -45,7 +47,7 @@ export function PublishStage({ p, running, run, goStage }: StageProps) {
         ) : null}
         <div className="card"><h3>Subir a Instagram</h3>
           <ol className="clean small">
-            <li>Descarga el MP4 final{p.edit?.final ? <> (<a href={`/media/${p.id}/${p.edit.final}`} download style={{ color: "var(--cta)" }}>aquí</a>)</> : null} y pásalo al teléfono (AirDrop).</li>
+            <li>Descarga el MP4 final{video ? <> (<a href={`/media/${p.id}/${video}`} download style={{ color: "var(--cta)" }}>aquí</a>)</> : null} y pásalo al teléfono (AirDrop).</li>
             <li>Instagram → Nuevo reel → activa <b>“Trial”</b> antes de compartir.</li>
             <li>Pega caption, portada y primer comentario.</li>
             <li>Vuelve aquí y marca como publicado con el link.</li>

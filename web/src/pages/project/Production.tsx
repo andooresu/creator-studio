@@ -22,7 +22,7 @@ import { ExportCard } from "@/components/ExportCard.tsx";
 import { AndooMark } from "@/components/brand/AndooMark.tsx";
 import { useElapsed, fmtElapsed } from "@/hooks/use-elapsed.ts";
 import { cn } from "@/lib/utils.ts";
-import { ProgressBar, spentOf } from "./ProgressBar.tsx";
+import { ProgressBar, spentOf, capSpentOf } from "./ProgressBar.tsx";
 import { CapField, EstimateLine, capInvalid, parseCap, useCapValue, useEstimate, usdShort } from "./Estimate.tsx";
 
 // ---------- Etiquetas compartidas (también las usan la barra lateral y el tablero) ----------
@@ -335,7 +335,7 @@ function Header({ p, prod, status, style, busy, onStop }: {
         ) : null}
       </span>
       <span className="grow" />
-      <span className="text-muted-foreground">Costo hasta ahora <b className="font-medium text-foreground tabular-nums">{status === "running" && spentOf(prod).live ? "≈ " : ""}{money(spentOf(prod).spent)}</b></span>
+      <span className="text-muted-foreground">{prod?.capBaseUsd ? "Total del proyecto" : "Costo hasta ahora"} <b className="font-medium text-foreground tabular-nums">{status === "running" && spentOf(prod).live ? "≈ " : ""}{money(spentOf(prod).spent)}</b>{prod?.capBaseUsd ? <> · esta grabación <b className="font-medium text-foreground tabular-nums">{money(capSpentOf(prod))}</b></> : null}</span>
       {live ? <StopButton busy={busy} onStop={onStop} /> : null}
     </div>
   );
@@ -817,7 +817,7 @@ export function ProductionPanel({ p, setProject }: { p: Project; setProject: (p:
       {pending && pending.type in PENDING_LABEL ? (
         <PendingCard kind={pending.type}>
           {pending.type === "question" ? <QuestionCard q={pending.data} onSubmit={onAnswer} busy={busy} />
-            : pending.type === "approval" ? <ApprovalCard a={pending.data} onDecide={onDecide} busy={busy} events={events} total={spentOf(prod).spent} />
+            : pending.type === "approval" ? <ApprovalCard a={pending.data} onDecide={onDecide} busy={busy} events={events} total={capSpentOf(prod)} />
             : pending.type === "budget" ? <BudgetCard b={pending.data} busy={busy} onRaise={onRaise} onStop={onBudgetStop} />
             : null}
         </PendingCard>

@@ -2,13 +2,13 @@
 // costo y detener.
 import express from "express";
 import type { Request, Response } from "express";
-import { getProject } from "../db.ts";
+import { getProject, save } from "../db.ts";
 import { startProduction, sendMessage, answerQuestion, decideApproval, stopProduction, resolveBudget } from "../agent/runner.ts";
 import { modeOf } from "../agent/prompt.ts";
 import type { ProductionMode } from "../agent/prompt.ts";
 import { estimateProduction } from "../agent/estimate.ts";
 import { getStyle } from "../styles/store.ts";
-import type { Project } from "../../shared/types.ts";
+import type { EditRun, Project } from "../../shared/types.ts";
 
 export const productionRouter = express.Router();
 
@@ -21,6 +21,22 @@ const need = (req: Request): Project => {
   return p;
 };
 const MODES = ["reel", "clase", "talking"] as const;
+
+/** Proyecto con el camino de Edición (grabación + producción talking). */
+const isTalkingEdit = (p: Project): boolean => Boolean(p.recording) && (p.production as { mode?: ProductionMode } | null | undefined)?.mode === "talking";
+
+const NEW_RUN_NOTICE = (p: Project): string =>
+  `El usuario pidió una corrida nueva de la plantilla sobre el corte actual (${p.edit?.final || p.edit?.cut || "edit/final.mp4"}): revisa que la secuencia use ese corte, aplica lo que pida y entrega un render final nuevo. Los renders anteriores ya no cuentan.`;
+
+/** Corrida nueva de plantilla: editRun "plantilla" desde ahora (los renders anteriores no cuentan), sin video aprobado y
+ *  de vuelta en Edición. */
+function beginPlantillaRun(p: Project, startedAt: string): void {
+  const flags = (p.production as { flags?: EditRun["flags"] } | null)?.flags;
+  p.editRun = { quick: false, styleId: p.styleId ?? null, ...(flags ? { flags } : {}), ...(typeof p.production?.capUsd === "number" ? { capUsd: p.production.capUsd } : {}), state: "plantilla", startedAt };
+  p.finalVideo = null;
+  p.editApproved = false;
+  if (p.stage === "publicacion" || p.stage === "publicado") p.stage = "edicion";
+}
 
 // Estimación antes de producir (costo, minutos, preguntas y tope por defecto): cálculo local, sin llamar a la IA.
 productionRouter.get("/api/projects/:id/production/estimate", wrap((req, res) => {
@@ -53,8 +69,16 @@ productionRouter.post("/api/projects/:id/production/start", wrap((req, res) => {
   const capRaw = req.body?.capUsd;
   if (capRaw !== undefined && capRaw !== null && (typeof capRaw !== "number" || !Number.isFinite(capRaw) || capRaw < 0)) throw new Error("El tope de costo debe ser un número en US$ mayor o igual a 0.");
   const capUsd = typeof capRaw === "number" ? capRaw : undefined;
-  try { startProduction(p, { mode, brief, changeMode, restyle, flags: req.body?.flags, capUsd }); } // flags: opciones de inicio (las valida el runner)
+  const startedAt = new Date().toISOString();
+  const newRun = req.body?.newRun === true;
+  // una sesión anterior ya entregó su video: sin este aviso, al reanudarla puede dar el trabajo por terminado
+  const notice = newRun && p.production?.sessionId ? NEW_RUN_NOTICE(p) : undefined;
+  try { startProduction(p, { mode, brief, changeMode, restyle, flags: req.body?.flags, capUsd, notice }); } // flags: opciones de inicio (las valida el runner)
   catch (e) { if (restyle) p.styleId = prevStyle; throw e; } // si no arrancó, el cambio de estilo no queda a medias
+  // «Producir (de nuevo) con plantilla» desde Edición (newRun): es una corrida nueva del camino por defecto. Así su
+  // render es el que se muestra y se aprueba (aunque antes se eligiera el corte rápido), los renders anteriores no
+  // cuentan y el video aprobado antes deja de valer.
+  if (newRun && isTalkingEdit(p)) { beginPlantillaRun(p, startedAt); save(); }
   res.json(p);
 }));
 
@@ -62,7 +86,16 @@ productionRouter.post("/api/projects/:id/production/message", wrap((req, res) =>
   const p = need(req);
   const text = typeof req.body?.text === "string" ? req.body.text : "";
   if (!text.trim()) throw new Error("Escribe un mensaje.");
-  sendMessage(p, text);
+  // «Ajustar» (newRun: true) cuando la corrida ya terminó (o después de un corte rápido o de aprobar) es una corrida nueva
+  // de plantilla: su render nuevo pasa a ser el que se muestra y se aprueba, y la aprobación anterior deja de valer. Un
+  // mensaje normal del chat (una pregunta, por ejemplo) solo conversa: no toca la corrida ni la aprobación.
+  const st = p.editRun?.state;
+  const wantsRun = req.body?.newRun === true && isTalkingEdit(p) && Boolean(p.editRun) && (p.editApproved || p.editRun!.quick || st === "listo");
+  // con el corte trabajando, la corrida nueva usaría un corte a medio escribir
+  if (wantsRun && (st === "corte" || (p.job?.status === "running" && (p.job.stage === "edicion" || p.job.stage === "tomas")))) throw new Error("Espera a que termine el corte.");
+  const startedAt = new Date().toISOString();
+  sendMessage(p, text, wantsRun ? NEW_RUN_NOTICE(p) : undefined);
+  if (wantsRun) { beginPlantillaRun(p, startedAt); save(); }
   res.json(p);
 }));
 
