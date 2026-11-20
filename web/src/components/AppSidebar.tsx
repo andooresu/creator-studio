@@ -51,6 +51,12 @@ function UsageMeter() {
           <div className="mt-1.5 text-muted-foreground">Quedan {money(Math.max(0, u.remaining ?? 0))}{u.source === "proveedor" ? "" : " (estimado)"}</div>
         </>
       ) : null}
+      {/* con Claude como proveedor, el gasto en imágenes va a la clave de OpenAI: se muestra aparte, no se suma */}
+      {u.provider !== "openai" && (u.imagesSpent ?? 0) > 0 ? (
+        <div className="mt-1.5 flex items-baseline justify-between gap-2 text-muted-foreground">
+          <span>Imágenes · OpenAI</span><span className="tabular-nums">{money(u.imagesSpent ?? 0)}</span>
+        </div>
+      ) : null}
     </a>
   );
 }

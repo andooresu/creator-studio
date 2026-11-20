@@ -6,9 +6,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { load, save, id, getProject, projectDir, log, APP_DIR, PROJECTS_DIR, BRANDS_DIR, INSPO_DIR, DEFAULT_BRAND } from "./db.ts";
-import { usageSummary, priceTable, MODELS, hasKey } from "./ai.ts";
+import { usageSummary, priceTable, MODELS, hasKey, reserveOpenAICredit, imageUnitUsd } from "./ai.ts";
+import { generateImage, composeImagePrompt, ImageGenError } from "./images.ts";
 import { tools } from "./media.ts";
-import { STAGES, startJob, analyzeAndScript, writeScript, proposeConcept, runEdit, publishPack, analyzeInspoVideo, projectFromVideo, planTakes } from "./pipeline.ts";
+import { datosProblem } from "../shared/apoyoLimits.ts";
+import { STAGES, startJob, analyzeAndScript, writeScript, proposeConcept, runEdit, publishPack, analyzeInspoVideo, projectFromVideo, planTakes, proposeApoyos, retime, readWords, DATO_MAX, DATOS_MAX } from "./pipeline.ts";
 import { generateGuides, iterateGuide, snapshot } from "./brand.ts";
 import { fetchProfile, cleanHandle, detectPlatform, detectIgUser } from "./inspo.ts";
 import { motionRouter } from "./routes/motion.ts";
@@ -24,7 +26,7 @@ import { sweepPreviewTmp } from "./styles/preview.ts";
 import { eventsHandler } from "./events.ts";
 import { styleSummaries, getStyle, markUsed, listStyles } from "./styles/store.ts";
 import type {
-  AppState, Brand, BrandGen, BrandSource, BrandsResponse, Effort, InspoAccount, InspoCollection, InspoResponse, InspoVideo,
+  Apoyo, AppState, Brand, BrandGen, BrandSource, BrandsResponse, Effort, InspoAccount, InspoCollection, InspoResponse, InspoVideo,
   AudioProvider, Jobbable, Platform, Project, ProjectKind, Provider, PublicSettings, RawFile, Settings, SettingsUpdate, AiStage, ModelPrice,
   EditRun, EditRunRequest, FinalVideo, Reference, Style,
 } from "../shared/types.ts";
@@ -111,18 +113,19 @@ app.use("/brands", express.static(BRANDS_DIR));
 // Datos que los middlewares previos dejan en la petición para decidir dónde guarda multer.
 type UploadReq = Request & { uploadDir?: () => string; uploadSub?: string };
 
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, _f, cb) => {
-      const r = req as UploadReq;
-      const d = r.uploadDir ? r.uploadDir() : path.join(projectDir(r.params.id), r.uploadSub || "uploads");
-      fs.mkdirSync(d, { recursive: true });
-      cb(null, d);
-    },
-    filename: (_r, f, cb) => cb(null, Date.now() + "-" + f.originalname.replace(/[^\w.\-]+/g, "_")),
-  }),
-  limits: { fileSize: 4 * 1024 * 1024 * 1024 },
+const uploadStorage = multer.diskStorage({
+  destination: (req, _f, cb) => {
+    const r = req as UploadReq;
+    const d = r.uploadDir ? r.uploadDir() : path.join(projectDir(r.params.id), r.uploadSub || "uploads");
+    fs.mkdirSync(d, { recursive: true });
+    cb(null, d);
+  },
+  filename: (_r, f, cb) => cb(null, Date.now() + "-" + f.originalname.replace(/[^\w.\-]+/g, "_")),
 });
+const upload = multer({ storage: uploadStorage, limits: { fileSize: 4 * 1024 * 1024 * 1024 } });
+// archivos de apoyos visuales (imagen o clip): tope propio de 200 MB
+const APOYO_MAX_MB = 200;
+const apoyoUpload = multer({ storage: uploadStorage, limits: { fileSize: APOYO_MAX_MB * 1024 * 1024 } });
 const sub = (s: string) => (req: Request, _res: Response, next: NextFunction) => { (req as UploadReq).uploadSub = s; next(); };
 
 type Handler = (req: Request, res: Response) => unknown;
@@ -184,6 +187,8 @@ const AUDIO_PROVIDERS: AudioProvider[] = ["elevenlabs", "local", "sintetizado"];
 const LOCAL_TTS: Settings["localTtsEngine"][] = ["kokoro", "chatterbox"];
 const PROVIDERS: Provider[] = ["anthropic", "openai"];
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
+const IMAGE_PROVIDERS: Settings["imageProvider"][] = ["openai"];
+const IMAGE_QUALITIES: Settings["imageQuality"][] = ["low", "medium", "high"];
 
 app.put("/api/settings", wrap((req, res) => {
   const s: Settings = load().settings;
@@ -221,6 +226,20 @@ app.put("/api/settings", wrap((req, res) => {
     const voices = sayVoices();
     if (voices.length && !voices.includes(v)) throw new Error(`La voz "${v}" no está instalada en este Mac. Voces en español: ${voices.join(", ")}.`);
     s.sayVoice = v.slice(0, 80);
+  }
+  // imágenes de apoyo: proveedor (solo OpenAI por ahora), modelo y calidad
+  if (b.imageProvider !== undefined) {
+    if (!oneOf(IMAGE_PROVIDERS, b.imageProvider)) throw new Error("Proveedor de imágenes no válido: por ahora solo openai.");
+    s.imageProvider = b.imageProvider;
+  }
+  if (b.imageModel !== undefined) {
+    const m = typeof b.imageModel === "string" ? b.imageModel.trim() : "";
+    if (!m || m.length > 80 || !/^[\w.\-]+$/.test(m)) throw new Error("Modelo de imagen no válido (ej. gpt-image-2).");
+    s.imageModel = m;
+  }
+  if (b.imageQuality !== undefined) {
+    if (!oneOf(IMAGE_QUALITIES, b.imageQuality)) throw new Error("Calidad de imagen no válida: usa low, medium o high.");
+    s.imageQuality = b.imageQuality;
   }
   if (b.credits) for (const k of PROVIDERS) if (b.credits[k] !== undefined) s.credits[k] = Math.max(0, Number(b.credits[k]) || 0);
   if (b.hardStop !== undefined) s.hardStop = Boolean(b.hardStop);
@@ -535,7 +554,7 @@ function afterEditJob(pid: string, startedAt: string): void {
     const restyle = Boolean(p.production) && ((p.production as { styleId?: string | null } | null | undefined)?.styleId ?? null) !== (run.styleId ?? null);
     // una sesión anterior ya conoce otro corte: se le avisa que hay uno nuevo y que el render final debe rehacerse
     const notice = p.production?.sessionId
-      ? `Hay un corte nuevo de la edición automática (${p.edit?.final || p.edit?.cut || "edit/final.mp4"}, ${p.edit?.at || startedAt}): vuelve a importar la secuencia sobre ese corte, re-temporiza los subtítulos y entrega un render final nuevo. Los renders anteriores ya no sirven.`
+      ? `Hay un corte nuevo de la edición automática (${p.edit?.cut || p.edit?.final || "edit/cut.mp4"}, ${p.edit?.at || startedAt}): vuelve a importar la secuencia sobre ese corte limpio, re-temporiza los subtítulos y entrega un render final nuevo. Nunca importes edit/final.mp4: ya trae subtítulos e imágenes de apoyo quemados. Los renders anteriores ya no sirven.`
       : undefined;
     startProduction(p, { mode: "talking", flags: run.flags, capUsd: run.capUsd, restyle, notice });
     log(p, "Edición: corte listo; el productor está aplicando la plantilla");
@@ -708,6 +727,9 @@ function setRecording(p: Project, file: string, name: string): void {
   // la producción anterior se hizo sobre otro video: se detiene (si trabajaba) y se olvidan su sesión y sus renders
   try { resetProductionForNewRecording(p); } catch (e) { console.warn(`[proyecto ${p.id}] no se pudo reiniciar la producción: ${errText(e)}`); }
   try { fs.rmSync(path.join(projectDir(p.id), "recording", "words.json"), { force: true }); } catch {}
+  // los apoyos tenían tiempos de la grabación anterior: se descartan con sus archivos (apoyosCostUsd se conserva: ya se pagó)
+  p.apoyos = [];
+  try { fs.rmSync(path.join(projectDir(p.id), "apoyos"), { recursive: true, force: true }); } catch {}
   p.stage = "concepto";
   log(p, `Grabación cargada: ${name}`);
   save();
@@ -748,9 +770,238 @@ app.get("/api/projects/:id/references/:rid/video", (req, res) => {
 app.post("/api/projects/:id/concept", wrap((req, res) => {
   const p = need(req);
   if (!p.recording) throw new Error("Primero carga tu grabación");
+  assertNoImagesGenerating(p);
   startJob(p, "concepto", (step) => proposeConcept(p, step, req.body.feedback || ""));
   res.json(p);
 }));
+
+// 5b. Apoyos visuales (entrega 4): se revisan en Propuesta visual; las imágenes se generan solo al tocar «Generar».
+const APOYO_MODOS: Apoyo["modo"][] = ["encima", "pantalla_completa"];
+const APOYO_POSICIONES: Apoyo["posicion"][] = ["arriba", "centro", "abajo"];
+const APOYO_ANIMACIONES: Apoyo["animacion"][] = ["palabras", "cifra", "pasos", "comparacion", "lista", "ninguna"];
+const APOYO_IMG = /\.(png|jpe?g|webp)$/i;
+const APOYO_VID = /\.(mp4|mov|m4v)$/i;
+
+const needApoyo = (p: Project, aid: string): Apoyo => {
+  const a = (p.apoyos || []).find((x) => x.id === aid);
+  if (!a) throw new Error("Apoyo no encontrado");
+  return a;
+};
+
+/** Mientras la IA propone apoyos o rehace la propuesta, la lista que devuelve se fusiona con la de ese momento a partir
+ *  de una copia anterior: una edición o un borrado hechos durante la llamada se perderían (o el apoyo quitado volvería).
+ *  Por eso editar, aprobar, quitar, subir y generar esperan a que termine. */
+function assertApoyosEditable(p: Project): void {
+  if (p.job?.status === "running" && p.job.stage === "concepto") {
+    throw new Error("La IA está trabajando en la propuesta y sus apoyos: espera a que termine para editar, aprobar, quitar, subir o generar.");
+  }
+}
+
+/** Rehacer la propuesta o proponer apoyos reemplaza la lista con lo que devuelve la IA, que no sabe qué imagen se está
+ *  generando: el apoyo podría desaparecer o cambiar de descripción y la imagen pagada quedaría sin apoyo (o atada a otro
+ *  prompt). Se espera a que las imágenes en curso terminen. */
+function assertNoImagesGenerating(p: Project): void {
+  if ((p.apoyos || []).some((a) => a.estado === "generando")) {
+    throw new Error("Hay imágenes generándose: espera a que terminen para pedir cambios o proponer apoyos.");
+  }
+}
+
+/** Imagen generada (pagada) que es el archivo actual del apoyo: es la única que se conserva al quitarlo. Un archivo
+ *  subido se borra aunque el apoyo haya tenido antes una imagen pagada (esa ya se reemplazó al subir). */
+const keepsPaidFile = (a: Apoyo): boolean => a.fuente === "generar" && !!a.archivo;
+
+/** Borra un archivo de apoyo solo si vive en <pid>/apoyos/ y ningún apoyo de la lista lo usa. */
+function dropApoyoFile(p: Project, rel: string | null | undefined): void {
+  if (!rel) return;
+  const root = path.join(projectDir(p.id), "apoyos");
+  const abs = path.resolve(projectDir(p.id), rel);
+  if (!abs.startsWith(root + path.sep)) return;
+  if ((p.apoyos || []).some((a) => a.archivo && path.resolve(projectDir(p.id), a.archivo) === abs)) return;
+  try { fs.rmSync(abs, { force: true }); } catch {}
+}
+
+app.post("/api/projects/:id/apoyos/propose", wrap((req, res) => {
+  const p = need(req);
+  if (!p.recording) throw new Error("Primero carga tu grabación");
+  if (!p.concept) throw new Error("Primero genera la propuesta visual");
+  assertNoImagesGenerating(p);
+  startJob(p, "concepto", (step) => proposeApoyos(p, step));
+  res.json(p);
+}));
+
+app.patch("/api/projects/:id/apoyos/:aid", wrap((req, res) => {
+  const p = need(req);
+  const a = needApoyo(p, req.params.aid);
+  assertApoyosEditable(p);
+  const b = (req.body || {}) as Record<string, unknown>;
+  const next: Apoyo = { ...a };
+  if (b.aprobado !== undefined) {
+    if (typeof b.aprobado !== "boolean") throw new Error("aprobado debe ser verdadero o falso.");
+    next.aprobado = b.aprobado;
+  }
+  if (b.modo !== undefined) { if (!oneOf(APOYO_MODOS, b.modo)) throw new Error("Modo no válido: usa encima o pantalla_completa."); next.modo = b.modo; }
+  if (b.posicion !== undefined) { if (!oneOf(APOYO_POSICIONES, b.posicion)) throw new Error("Posición no válida: usa arriba, centro o abajo."); next.posicion = b.posicion; }
+  if (b.animacion !== undefined) { if (!oneOf(APOYO_ANIMACIONES, b.animacion)) throw new Error("Animación no válida."); next.animacion = b.animacion; }
+  for (const k of ["contenido", "prompt"] as const) {
+    const v = b[k];
+    if (v === undefined) continue;
+    if (typeof v !== "string") throw new Error(`${k} debe ser texto.`);
+    next[k] = v.slice(0, k === "prompt" ? 4000 : 1000);
+  }
+  if (b.datos !== undefined) {
+    if (!Array.isArray(b.datos) || b.datos.some((d) => typeof d !== "string")) throw new Error("datos debe ser una lista de textos.");
+    const ds = (b.datos as string[]).map((d) => d.trim().replace(/\s+/g, " "));
+    if (ds.length > DATOS_MAX) throw new Error(`Máximo ${DATOS_MAX} textos o cifras por apoyo (se leen en pocos segundos).`);
+    const long = ds.find((d) => d.length > DATO_MAX);
+    if (long) throw new Error(`«${long.slice(0, 40)}…» es muy largo: cada texto o cifra puede tener hasta ${DATO_MAX} caracteres.`);
+    next.datos = ds;
+  }
+  // tamaño de los datos para su animación (lo que INS puede mostrar legible): solo errores de formato, no la falta de datos
+  if (next.tipo === "broll_animado" && (b.datos !== undefined || b.animacion !== undefined) && next.animacion !== "ninguna") {
+    const why = datosProblem(next.animacion, next.datos);
+    if (why && (next.datos || []).some((d) => String(d).trim())) throw new Error(`No se puede guardar: ${why}.`);
+  }
+  for (const k of ["inicio_s", "fin_s"] as const) {
+    const v = b[k];
+    if (v === undefined) continue;
+    if (typeof v !== "number" || !Number.isFinite(v)) throw new Error("Los tiempos deben ser números en segundos.");
+    next[k] = v;
+  }
+  if (b.inicio_s !== undefined || b.fin_s !== undefined) retime(next, p.recording?.duration, readWords(p));
+  if (next.aprobado && !a.aprobado && next.tipo === "imagen" && !next.archivo) throw new Error("Genera o sube la imagen antes de aprobar este apoyo.");
+  // un B-roll animado aprobado es un inserto obligatorio: tiene que poder construirse (animación elegida y datos que caben)
+  if (next.aprobado && next.tipo === "broll_animado") {
+    const why = datosProblem(next.animacion, next.datos);
+    if (why) throw new Error(`Este B-roll animado no se puede aprobar: ${why}. Corrígelo en Editar.`);
+  }
+  Object.assign(a, next);
+  p.apoyos!.sort((x, y) => x.inicio_s - y.inicio_s);
+  p.updatedAt = new Date().toISOString();
+  save();
+  res.json(p);
+}));
+
+app.delete("/api/projects/:id/apoyos/:aid", wrap((req, res) => {
+  const p = need(req);
+  const a = needApoyo(p, req.params.aid);
+  assertApoyosEditable(p);
+  p.apoyos = (p.apoyos || []).filter((x) => x.id !== a.id);
+  // una imagen pagada se conserva en la carpeta del proyecto (como al rehacer la propuesta): no hay que volver a pagarla
+  if (!keepsPaidFile(a)) dropApoyoFile(p, a.archivo);
+  log(p, `Apoyo quitado: ${a.contenido.slice(0, 60)}`);
+  save();
+  res.json(p);
+}));
+
+// subir imagen propia (o video, para tipo clip): se valida el apoyo antes de recibir el archivo
+app.post("/api/projects/:id/apoyos/:aid/file",
+  (req: Request, res: Response, next: NextFunction) => {
+    try { const p = need(req); needApoyo(p, req.params.aid); assertApoyosEditable(p); } catch (e) { return res.status(400).json({ error: (e as Error).message }); }
+    (req as UploadReq).uploadSub = "apoyos";
+    apoyoUpload.single("file")(req, res, (err?: unknown) => {
+      if (!err) return next();
+      const code = (err as { code?: string }).code;
+      res.status(400).json({ error: code === "LIMIT_FILE_SIZE" ? `El archivo pasa de ${APOYO_MAX_MB} MB. Usa uno más liviano.` : (err as Error).message });
+    });
+  },
+  wrap((req, res) => {
+    const f = req.file;
+    if (!f) throw new Error("No llegó ningún archivo. Vuelve a elegirlo.");
+    const reject = (msg: string): never => { fs.rmSync(f.path, { force: true }); throw new Error(msg); };
+    const p = getProject(req.params.id);
+    const a = p?.apoyos?.find((x) => x.id === req.params.aid);
+    if (!p || !a) return reject("El apoyo ya no existe.");
+    const isImg = APOYO_IMG.test(f.originalname);
+    const isVid = APOYO_VID.test(f.originalname);
+    if (!isImg && !(isVid && a.tipo === "clip")) reject(a.tipo === "clip" ? "Formato no admitido: sube una imagen (png, jpg, webp) o un video (mp4, mov, m4v)." : "Formato no admitido: sube una imagen png, jpg o webp.");
+    if (a.estado === "generando") reject("Se está generando una imagen para este apoyo: espera a que termine.");
+    try { assertApoyosEditable(p); } catch (e) { reject((e as Error).message); }
+    const prev = a.archivo;
+    a.archivo = path.relative(projectDir(p.id), f.path).split(path.sep).join("/");
+    a.fuente = "carpeta"; a.estado = "idle"; a.error = null; a.at = new Date().toISOString();
+    dropApoyoFile(p, prev);
+    log(p, `Archivo de apoyo subido: ${f.originalname}`);
+    save();
+    res.json(p);
+  }));
+
+// generar la ilustración con OpenAI (pago por clic). Responde de inmediato; la imagen se genera en segundo plano
+// (no usa startJob: no bloquea la propuesta, el corte ni otros trabajos).
+app.post("/api/projects/:id/apoyos/:aid/generate", wrap((req, res) => {
+  const p = need(req);
+  const a = needApoyo(p, req.params.aid);
+  if (a.tipo !== "imagen") throw new Error("Solo los apoyos de tipo imagen se generan.");
+  assertApoyosEditable(p);
+  if (!hasKey("openai")) throw new Error("Falta la clave de OpenAI: agrégala en Ajustes → Imágenes de apoyo.");
+  if (!a.prompt?.trim()) throw new Error("Escribe la descripción (prompt) de la imagen antes de generarla.");
+  if (a.estado === "generando") throw new Error("Ya se está generando esta imagen.");
+  const s = load().settings;
+  const model = s.imageModel || "gpt-image-2";
+  const quality = s.imageQuality || "medium";
+  const prompt = composeImagePrompt(p, a);
+  // freno + reserva: las imágenes en curso cuentan contra el crédito hasta que su fila de uso real existe
+  const release = reserveOpenAICredit(imageUnitUsd(model, quality));
+  a.estado = "generando"; a.error = null; a.gen = { model, quality };
+  log(p, `Generando imagen de apoyo (${model}, ${quality})`);
+  save();
+  res.json(p);
+  // nada que pase después de la llamada puede tumbar el servidor (una promesa rechazada sin catch lo cerraría)
+  void generateApoyo(p.id, a.id, prompt, model, quality, p.recording?.at)
+    .catch((e) => {
+      console.warn("[apoyos] la generación falló después de la llamada:", errText(e));
+      try {
+        const x = getProject(p.id)?.apoyos?.find((y) => y.id === a.id);
+        if (x && x.estado === "generando") { x.estado = "error"; x.error = "No se pudo guardar la imagen generada. Intenta de nuevo."; x.gen = null; save(); }
+      } catch {}
+    })
+    .finally(release);
+}));
+
+/** Fila de uso de una imagen que OpenAI pudo haber cobrado sin que llegara (corte, reinicio, respuesta inválida):
+ *  precio estimado, para que Uso y el freno de crédito no la pierdan. Suma también al gasto del proyecto y del apoyo. */
+function chargeEstimatedImage(p: Project | undefined, a: Apoyo | undefined, pid: string, model: string, quality: Settings["imageQuality"]): void {
+  const est = imageUnitUsd(model, quality);
+  load().usage.push({ id: id(), at: new Date().toISOString(), provider: "openai", stage: "imagenes", projectId: pid, model, inputTokens: 0, outputTokens: 0, cost: est, ms: 0, estimated: true });
+  if (p) p.apoyosCostUsd = Math.round(((p.apoyosCostUsd || 0) + est) * 1e6) / 1e6;
+  if (a) a.costUsd = Math.round(((a.costUsd || 0) + est) * 1e6) / 1e6;
+}
+
+async function generateApoyo(pid: string, aid: string, prompt: string, model: string, quality: Settings["imageQuality"], recAt?: string): Promise<void> {
+  const rel = `apoyos/${aid}-${Date.now()}.png`;
+  const abs = path.join(PROJECTS_DIR, pid, rel);
+  let r: Awaited<ReturnType<typeof generateImage>>;
+  try {
+    r = await generateImage({ prompt, model, quality, size: "1024x1536", outAbs: abs });
+  } catch (e) {
+    const p = getProject(pid);
+    const a = p?.apoyos?.find((x) => x.id === aid);
+    // la respuesta llegó (o pudo llegar) y OpenAI la cobró aunque la imagen no sirva: se registra el precio estimado
+    const billed = e instanceof ImageGenError && e.billed;
+    if (billed) chargeEstimatedImage(p, a, pid, model, quality);
+    if (a) { a.estado = "error"; a.error = errText(e) + (billed ? " El costo estimado quedó registrado en Uso." : ""); a.gen = null; }
+    save();
+    return;
+  }
+  const db = load();
+  db.usage.push({ id: id(), at: new Date().toISOString(), provider: "openai", stage: "imagenes", projectId: pid, model: r.model, inputTokens: r.usage?.input_tokens ?? 0, outputTokens: r.usage?.output_tokens ?? 0, cost: r.costUsd, ms: r.ms });
+  const p = getProject(pid);
+  if (!p) { fs.rmSync(abs, { force: true }); save(); return; }
+  p.apoyosCostUsd = Math.round(((p.apoyosCostUsd || 0) + r.costUsd) * 1e6) / 1e6;
+  const a = p.apoyos?.find((x) => x.id === aid);
+  if (!a) {
+    // el apoyo se quitó mientras se generaba: la imagen pagada se conserva en apoyos/, salvo que haya otra grabación
+    if ((p.recording?.at ?? undefined) !== recAt) fs.rmSync(abs, { force: true });
+    save();
+    return;
+  }
+  const prev = a.archivo;
+  a.archivo = rel; a.fuente = "generar"; a.estado = "idle"; a.error = null; a.gen = null;
+  a.costUsd = Math.round(((a.costUsd || 0) + r.costUsd) * 1e6) / 1e6;
+  a.at = new Date().toISOString();
+  if (prev && prev !== rel) dropApoyoFile(p, prev);
+  log(p, `Imagen de apoyo lista (US$${r.costUsd.toFixed(3)})`);
+  save();
+}
 
 // 6a. Selección de tomas (IA) y ajuste manual
 app.post("/api/projects/:id/edit-plan", wrap((req, res) => {
@@ -1042,6 +1293,15 @@ recoverProductions();
 sweepPreviewTmp(); // restos de vistas previas interrumpidas
 // Recuperar trabajos que quedaron "corriendo" si el servidor se reinició
 for (const p of [...load().projects, ...load().brandGuides, ...load().videos] as Jobbable[]) if (p.job?.status === "running") p.job = { ...p.job, status: "error", step: "Interrumpido al reiniciar el servidor. Reintenta." };
+// Imágenes de apoyo que se estaban generando: la llamada se perdió con el reinicio
+// (OpenAI pudo terminarla y cobrarla: se registra el precio estimado para que Uso y el freno de crédito la cuenten)
+for (const p of load().projects) for (const a of p.apoyos || []) if (a.estado === "generando") {
+  // el modelo y la calidad que se pidieron (guardados al empezar); Ajustes solo para datos de antes de este campo
+  const s = load().settings;
+  chargeEstimatedImage(p, a, p.id, a.gen?.model || s.imageModel || "gpt-image-2", a.gen?.quality || s.imageQuality || "medium");
+  a.gen = null;
+  a.estado = "error"; a.error = "Se interrumpió al reiniciar la app. Si OpenAI alcanzó a cobrarla, el costo estimado quedó registrado en Uso.";
+}
 save();
 
 app.listen(PORT, "127.0.0.1", () => console.log(`\n  ${load().settings.studioName} → http://localhost:${PORT}\n`));

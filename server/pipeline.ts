@@ -9,9 +9,11 @@ import { brandToPrompt } from "./brand.ts";
 import { downloadVideo } from "./inspo.ts";
 import { downloadReference, extractFrames, transcribe, tools } from "./media.ts";
 import { autoEdit, segmentWords } from "./editor.ts";
-import { Analysis, Script, Concept, Publish, TakePlan } from "../shared/schemas.ts";
+import { Analysis, Script, ConceptProposal, ApoyosProposal, Publish, TakePlan } from "../shared/schemas.ts";
+import type { ApoyoPropuesta } from "../shared/schemas.ts";
+import { DATO_MAX, DATOS_MAX, DATOS_POR_ANIMACION, CIFRA_MAX, PALABRA_MAX, datosProblem } from "../shared/apoyoLimits.ts";
 import { STAGES } from "../shared/types.ts";
-import type { Jobbable, Project, Reference, InspoVideo, Word } from "../shared/types.ts";
+import type { Apoyo, Jobbable, Project, Reference, InspoVideo, Word } from "../shared/types.ts";
 
 export { STAGES };
 
@@ -157,12 +159,164 @@ export async function proposeConcept(project: Project, step: Step, feedback = ""
   const rec = project.recording!;
   const content: ContentBlock[] = [{ type: "text", text: `GUION APROBADO:\n${JSON.stringify(project.script)}\nANÁLISIS DE LA REFERENCIA (estilo de edición a emular):\n${JSON.stringify(project.analysis?.edicion || {})}\nGRABACIÓN: duración ${rec.duration?.toFixed?.(1)}s. Transcripción: ${rec.transcript || "(no disponible — usa el guion)"}\nFotogramas de mi grabación:` }];
   for (const f of rec.frames!) { content.push({ type: "text", text: `t=${f.t}s` }); content.push(imgBlock(path.join(projectDir(project.id), f.rel))); }
+  const words = readWords(project);
+  if (words?.length) content.push({ type: "text", text: `FRASES DE MI GRABACIÓN CON TIEMPOS (segundos de la grabación original):\n${timedPhrases(words)}` });
   if (project.concept && feedback) content.push({ type: "text", text: `PROPUESTA ANTERIOR:\n${JSON.stringify(project.concept)}\nFEEDBACK: ${feedback}` });
-  content.push({ type: "text", text: "Propón el concepto visual de edición antes de editar: estilo, subtítulos, paleta, momentos exactos (zoom, B-roll, textos, SFX) con tiempos de mi grabación, música y portada." });
+  if (project.apoyos?.length) content.push({ type: "text", text: `APOYOS ACTUALES (conserva el id de los que sigan; los que quites dejan de usarse):\n${JSON.stringify(project.apoyos.map(apoyoForAi))}` });
+  content.push({ type: "text", text: `Propón el concepto visual de edición antes de editar: estilo, subtítulos, paleta, momentos exactos (zoom, textos, SFX) con tiempos de mi grabación, música y portada.
+Además propón de 2 a 6 apoyos visuales (campo "apoyos"):
+${APOYO_RULES}` });
   step("La IA está diseñando la propuesta visual…");
-  project.concept = await ask({ stage: "concepto", projectId: project.id, system: systemPrompt(project), content, schema: Concept });
+  const prop = await ask({ stage: "concepto", projectId: project.id, system: systemPrompt(project), content, schema: ConceptProposal });
+  const { apoyos, ...concept } = prop;
+  project.concept = concept;
+  project.apoyos = mergeApoyos(project.apoyos || [], apoyos, { duration: rec.duration, words });
   project.conceptApproved = false;
   project.stage = "concepto";
+}
+
+// ---------- 5b. Apoyos visuales (entrega 4) ----------
+// Límites de los datos de un B-roll animado (también en PATCH y en docs/apoyos.json): shared/apoyoLimits.ts
+export { DATO_MAX, DATOS_MAX } from "../shared/apoyoLimits.ts";
+/** Datos que propuso la IA dentro del límite: hasta los elementos que muestra su animación (DATOS_MAX si no tiene),
+ *  cada uno cortado en un límite de palabra (sigue siendo literal: un prefijo de las palabras dichas). */
+export function capDatos(datos: unknown, animacion?: string): string[] {
+  if (!Array.isArray(datos)) return [];
+  const maxItems = (animacion && DATOS_POR_ANIMACION[animacion]) || DATOS_MAX;
+  return datos.map((d) => {
+    const s = String(d ?? "").trim().replace(/\s+/g, " ");
+    if (s.length <= DATO_MAX) return s;
+    const cut = s.slice(0, DATO_MAX + 1);
+    const sp = cut.lastIndexOf(" ");
+    return (sp > 0 ? cut.slice(0, sp) : s.slice(0, DATO_MAX)).trim();
+  }).slice(0, maxItems); // sin filtrar vacíos: en comparacion la posición importa (detalle A / detalle B)
+}
+
+/** Reglas de estilo del dueño para proponer apoyos (también se usan en «Proponer más»). */
+const APOYO_RULES = `- Cada apoyo ILUSTRA lo que dice la voz en ese momento: "frase" = las palabras exactas de la voz donde entra; inicio_s y fin_s salen de los tiempos de la grabación (frases con tiempos o transcripción), en segundos de la grabación original; duración típica 1.5–4 s.
+- Estilo por defecto: ilustración o motion graphics limpios, coherentes con la marca. Nunca resultados falsos (antes/después, métricas de clientes, testimonios, capturas que finjan ser paneles o pantallas reales), nunca caras de personas reales, nunca texto legible inventado.
+- Prefiere "broll_animado" para conceptos, pasos, listas, comparaciones o cifras que la voz DICE (animacion: palabras | cifra | pasos | comparacion | lista); "datos" lleva solo palabras o números literales de la transcripción, nunca inventados.
+- "datos" CORTOS (se leen en 2–4 s sobre un video vertical): palabras = 1 a 3 textos de ≤ 6 palabras; cifra = [la cifra (≤ ${CIFRA_MAX} caracteres, solo el número con su unidad), etiqueta de ≤ 5 palabras]; pasos/lista 2–5 ítems de ≤ 6 palabras; comparacion = [idea A, idea B] de ≤ 4 palabras cada una (opcional detalle A, detalle B). Máximo ${DATO_MAX} caracteres por elemento y ninguna palabra de más de ${PALABRA_MAX} caracteres (nada de URLs largas): si la voz dice más, elige las palabras clave literales. Un broll_animado siempre lleva una animación (nunca "ninguna"); si ninguna aplica, propón otro tipo.
+- Usa "imagen" para cosas que conviene mostrar (un objeto, una escena, una metáfora visual): escribe en "prompt" una descripción para generar la ilustración (sin texto legible, vertical). Las imágenes NO se generan ahora: el creador decide si las genera o sube las suyas.
+- "clip" solo si el creador tendría un video propio que mostrar; "zoom" para un acercamiento al rostro en una frase clave.
+- modo "encima" (recuadro arriba, deja ver la cara) o "pantalla_completa"; posicion arriba | centro | abajo (evita "abajo": ahí van los subtítulos).
+- fuente: "generar" para imagen, "motion" para broll_animado/zoom, "carpeta" para clip. id: el de los apoyos actuales si sigue, "" si es nuevo. prompt "" y datos [] y animacion "ninguna" cuando no apliquen.`;
+
+/** Lo que se le muestra a la IA de un apoyo guardado (sin estado de la app). */
+function apoyoForAi(a: Apoyo): ApoyoPropuesta {
+  const { id: aid, tipo, inicio_s, fin_s, frase, modo, posicion, contenido, prompt, animacion, datos, fuente } = a;
+  return { id: aid, tipo, inicio_s, fin_s, frase, modo, posicion, contenido, prompt, animacion, datos, fuente };
+}
+
+/** recording/words.json si existe (palabras con tiempos de la grabación original). */
+export function readWords(project: Project): Word[] | null {
+  const wf = path.join(projectDir(project.id), "recording", "words.json");
+  try { return fs.existsSync(wf) ? (JSON.parse(fs.readFileSync(wf, "utf8")) as Word[]) : null; } catch { return null; }
+}
+
+/** Frases con tiempos para el prompt ("[s-e] texto"), acotadas para no inflar la entrada. */
+function timedPhrases(words: Word[]): string {
+  return segmentWords(words).map((x) => `[${x.s.toFixed(1)}-${x.e.toFixed(1)}] ${x.text}`).join("\n").slice(0, 12000);
+}
+
+const MIN_APOYO_S = 0.8;
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Recorta los tiempos a [0, duración] con fin > inicio (mínimo 0.8 s). */
+export function clampTimes(inicio: number, fin: number, duration?: number | null): { inicio_s: number; fin_s: number } {
+  const dur = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : Infinity;
+  let s = Number.isFinite(inicio) ? Math.max(0, inicio) : 0;
+  let e = Number.isFinite(fin) ? fin : s + MIN_APOYO_S;
+  if (s > dur) s = dur;
+  e = Math.min(Math.max(e, s + MIN_APOYO_S), dur);
+  if (e - s < MIN_APOYO_S) s = Math.max(0, e - MIN_APOYO_S);
+  return { inicio_s: r2(s), fin_s: r2(e) };
+}
+
+/** Índices de la primera y la última palabra que se solapan con [s, e] (null si no hay palabras o ninguna se solapa). */
+export function wordAnchors(words: Word[] | null | undefined, s: number, e: number): { w0: number | null; w1: number | null } {
+  if (!words?.length) return { w0: null, w1: null };
+  let w0: number | null = null;
+  let w1: number | null = null;
+  words.forEach((w, i) => { if (w.e > s && w.s < e) { if (w0 === null) w0 = i; w1 = i; } });
+  return { w0, w1 };
+}
+
+/** Ajusta tiempos y anclas de un apoyo (después de cambiar inicio/fin). */
+export function retime(a: Apoyo, duration?: number | null, words?: Word[] | null): Apoyo {
+  const t = clampTimes(a.inicio_s, a.fin_s, duration);
+  a.inicio_s = t.inicio_s; a.fin_s = t.fin_s;
+  const w = wordAnchors(words, a.inicio_s, a.fin_s);
+  a.w0 = w.w0; a.w1 = w.w1;
+  return a;
+}
+
+/** true si lo que el usuario ve de un apoyo no cambió (tiempos con ±0.05 s de tolerancia). */
+function sameContent(x: Apoyo, y: Apoyo): boolean {
+  const t = (s: unknown): string => String(s ?? "").trim().replace(/\s+/g, " ");
+  const ds = (d: unknown): string => JSON.stringify((Array.isArray(d) ? d : []).map(t));
+  return Math.abs(x.inicio_s - y.inicio_s) <= 0.05 && Math.abs(x.fin_s - y.fin_s) <= 0.05
+    && x.modo === y.modo && x.posicion === y.posicion && x.animacion === y.animacion
+    && ds(x.datos) === ds(y.datos) && t(x.frase) === t(y.frase) && t(x.contenido) === t(y.contenido) && t(x.prompt) === t(y.prompt);
+}
+
+/**
+ * Fusiona los apoyos propuestos con los guardados. Ids vacíos o desconocidos → id nuevo. Si la IA conservó un id con el
+ * mismo tipo, se conserva el estado de la app (archivo, costo, fecha, estado de generación); la aprobación solo si su
+ * contenido visible no cambió y (B-roll) se puede construir. Con append=false los apoyos que la IA quitó salen de la lista
+ * (sus archivos NO se borran: pudieron costar dinero); con append=true los actuales quedan intactos (los ids que ya existen
+ * se ignoran) y solo se agregan los nuevos. Nunca genera imágenes.
+ */
+export function mergeApoyos(old: Apoyo[], proposed: ApoyoPropuesta[], { duration, words, append = false }: { duration?: number | null; words?: Word[] | null; append?: boolean } = {}): Apoyo[] {
+  const byId = new Map(old.map((a) => [a.id, a]));
+  const used = new Set<string>();
+  const out: Apoyo[] = append ? old.map((a) => ({ ...a })) : [];
+  for (const raw of proposed) {
+    // «Proponer más» solo agrega: un id que ya está en la lista no puede reescribir ese apoyo
+    if (append && raw.id && byId.has(raw.id)) continue;
+    const prev = raw.id && !used.has(raw.id) ? byId.get(raw.id) : undefined;
+    const keep = prev && prev.tipo === raw.tipo ? prev : undefined;
+    const aid = keep ? keep.id : id();
+    used.add(aid);
+    const a: Apoyo = {
+      ...raw,
+      id: aid,
+      datos: capDatos(raw.datos, raw.animacion),
+      archivo: keep?.archivo ?? null,
+      aprobado: keep?.aprobado ?? false,
+      estado: keep?.estado ?? "idle",
+      error: keep?.error ?? null,
+      ...(keep?.costUsd ? { costUsd: keep.costUsd } : {}),
+      ...(keep?.at ? { at: keep.at } : {}),
+      ...(keep?.gen ? { gen: keep.gen } : {}),
+    };
+    if (keep?.archivo) a.fuente = keep.fuente; // un archivo subido sigue siendo «carpeta»
+    retime(a, duration, words);
+    // lo aprobado es lo que el usuario vio: si la IA cambió algo visible (tiempos, modo, posición, frase, contenido,
+    // descripción, animación o datos) vuelve a quedar sin aprobar; un B-roll que ya no se puede construir, también
+    if (keep?.aprobado && (!sameContent(keep, a) || (a.tipo === "broll_animado" && datosProblem(a.animacion, a.datos)))) a.aprobado = false;
+    out.push(a);
+  }
+  return out.sort((x, y) => x.inicio_s - y.inicio_s);
+}
+
+/** «Proponer apoyos» / «Proponer más»: llamada barata de texto que agrega apoyos sin rehacer (ni desaprobar) el concepto. */
+export async function proposeApoyos(project: Project, step: Step): Promise<void> {
+  const rec = project.recording!;
+  const words = readWords(project);
+  const c = project.concept;
+  const resumen = c ? { resumen: c.resumen, estiloGeneral: c.estiloGeneral, hookVisual: c.hookVisual, paleta: c.paleta, ritmo: c.ritmo } : {};
+  const content: ContentBlock[] = [{ type: "text", text: `GUION APROBADO:\n${JSON.stringify(project.script)}
+GRABACIÓN: duración ${rec.duration?.toFixed?.(1) ?? "?"}s. Transcripción: ${rec.transcript || "(no disponible — usa el guion)"}
+${words?.length ? `FRASES CON TIEMPOS (segundos de la grabación original):\n${timedPhrases(words)}\n` : ""}PROPUESTA VISUAL APROBADA O EN REVISIÓN (resumen):\n${JSON.stringify(resumen)}
+APOYOS ACTUALES (no los repitas ni los devuelvas: quedan como están):\n${JSON.stringify((project.apoyos || []).map(apoyoForAi))}
+
+Propón de 2 a 6 apoyos visuales NUEVOS que complementen los actuales (sin solaparse con ellos en el tiempo):
+${APOYO_RULES}` }];
+  step("La IA está proponiendo apoyos visuales…");
+  const r = await ask({ stage: "concepto", projectId: project.id, system: systemPrompt(project), content, schema: ApoyosProposal, maxTokens: 8000 });
+  project.apoyos = mergeApoyos(project.apoyos || [], r.apoyos, { duration: rec.duration, words, append: true });
+  log(project, `Apoyos propuestos: ${r.apoyos.length}`);
 }
 
 // ---------- Transcripción de la grabación con tiempos por palabra (se reutiliza) ----------
@@ -216,7 +370,25 @@ export async function runEdit(project: Project, step: Step): Promise<void> {
   let words: Word[] | null = null;
   const wf = path.join(projectDir(project.id), "recording", "words.json");
   if (fs.existsSync(wf)) words = JSON.parse(fs.readFileSync(wf, "utf8")) as Word[];
-  const res = await autoEdit({ input: project.recording!.file, dir: projectDir(project.id), concept: project.concept, plan: project.editPlan, words, brollDir: load().settings.brollDir, onStep: step });
+  // apoyos aprobados de tipo imagen con archivo: el corte rápido los dibuja en final.mp4 (cut.mp4 queda limpio)
+  const pdir = projectDir(project.id);
+  // Se copian a edit/overlays-src/ al empezar: el corte tarda minutos y mientras tanto el usuario puede regenerar,
+  // reemplazar o quitar un apoyo (lo que borra su archivo anterior); el corte dibuja las imágenes aprobadas al empezar.
+  const srcDir = path.join(pdir, "edit", "overlays-src");
+  fs.rmSync(srcDir, { recursive: true, force: true });
+  const apoyos: { abs: string; s: number; e: number; modo: Apoyo["modo"]; posicion: Apoyo["posicion"] }[] = [];
+  for (const a of project.apoyos || []) {
+    if (!a.aprobado || a.tipo !== "imagen" || !a.archivo) continue;
+    const from = path.join(pdir, a.archivo);
+    if (!fs.existsSync(from)) continue;
+    const abs = path.join(srcDir, `${apoyos.length}-${path.basename(a.archivo)}`);
+    try {
+      fs.mkdirSync(srcDir, { recursive: true });
+      fs.copyFileSync(from, abs, fs.constants.COPYFILE_FICLONE);
+    } catch { continue; }
+    apoyos.push({ abs, s: a.inicio_s, e: a.fin_s, modo: a.modo, posicion: a.posicion });
+  }
+  const res = await autoEdit({ input: project.recording!.file, dir: pdir, concept: project.concept, plan: project.editPlan, words, brollDir: load().settings.brollDir, apoyos, onStep: step });
   const rel = (p: string | null | undefined): string | null => (p ? path.relative(projectDir(project.id), p) : null);
   project.edit = { ...res, final: rel(res.final), cut: rel(res.cut), srtPath: rel(res.srtPath), briefPath: res.briefPath, at: new Date().toISOString() };
   project.editApproved = false;

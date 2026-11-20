@@ -1,4 +1,4 @@
-// 3. Propuesta visual: vista previa, subtítulos con color de acento, paleta, momentos, música, portada y
+// 3. Propuesta visual: vista previa, subtítulos con color de acento, paleta, apoyos visuales, momentos, música, portada y
 // feedback / aprobación. Aprobar lanza la edición por defecto (tomas + corte + plantilla, o solo corte rápido).
 import { useState } from "react";
 import { ArrowRight, Check, Sparkles } from "lucide-react";
@@ -7,6 +7,7 @@ import { useApp } from "../../store.tsx";
 import { Tag } from "../../ui.tsx";
 import type { StageProps } from "./contract.ts";
 import { EditRunOptions, editRunSummary, useEditRunOptions } from "./EditRunOptions.tsx";
+import { ApoyosPanel } from "./ApoyosPanel.tsx";
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -27,7 +28,7 @@ function brandAccent(palette: string[]): string | null {
   return best && bestScore >= 0.25 ? best : null;
 }
 
-export function ConceptStage({ p, running, run, goStage }: StageProps) {
+export function ConceptStage({ p, running, run, setProject, goStage }: StageProps) {
   const { state, toast } = useApp();
   const [fb, setFb] = useState("");
   const c = p.concept;
@@ -60,7 +61,10 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
   const brand = state?.brandIsPlaceholder ? null : (state?.brands || []).find((b) => b.id === (p.brandId || state?.defaultBrandId)) || null;
   const acc = HEX.test(c.subtitulos.colorAcento) ? c.subtitulos.colorAcento : (brand && brandAccent(brand.palette)) || "#FFD400";
 
+  // mientras una imagen se genera no se rehace la propuesta: la IA podría quitar o reescribir ese apoyo (el servidor también lo frena)
+  const generatingImgs = (p.apoyos || []).some((a) => a.estado === "generando");
   const revise = async () => {
+    if (generatingImgs) return;
     const text = fb.trim();
     if (!text) return toast("Escribe qué cambiar", true);
     try {
@@ -97,9 +101,12 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
           <h3 style={{ marginTop: 12 }}>Paleta</h3>
           <div className="swatches" style={{ marginBottom: 22 }}>{c.paleta.map((h, i) => <div key={i} className="swatch" style={{ background: h }}><span>{h}</span></div>)}</div>
         </div>
-        <div className="card"><h3>Momentos de edición</h3><div className="timeline">{c.momentos.map((m, i) => (
-          <div className="beat" key={i}><div className="tm">{m.tiempo}</div><div><Tag tone="y">{m.tipo}</Tag> {m.descripcion}</div></div>
-        ))}</div></div>
+        <ApoyosPanel p={p} running={running} run={run} setProject={setProject} />
+        {c.momentos?.length ? (
+          <div className="card"><h3>Momentos de edición</h3><div className="timeline">{c.momentos.map((m, i) => (
+            <div className="beat" key={i}><div className="tm">{m.tiempo}</div><div><Tag tone="y">{m.tipo}</Tag> {m.descripcion}</div></div>
+          ))}</div></div>
+        ) : null}
         <div className="grid2">
           <div className="card"><h3>Música</h3><p>{c.musica.estilo} · {c.musica.bpm} BPM</p><p className="small muted">{c.musica.notas}</p></div>
           <div className="card"><h3>Portada</h3><p className="hook-quote">{c.portada.texto}</p><p className="small muted">{c.portada.idea}</p></div>
@@ -107,12 +114,14 @@ export function ConceptStage({ p, running, run, goStage }: StageProps) {
         <div className="card"><h3>Ajustar o aprobar</h3>
           <textarea aria-label="Cambios a la propuesta" value={fb} onChange={(e) => setFb(e.target.value)} placeholder="Subtítulos más pequeños, menos zooms, música más oscura…" />
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button variant="secondary" disabled={running} onClick={() => void revise()}>Pedir cambios</Button>
+            <Button variant="secondary" disabled={running || generatingImgs} aria-describedby={generatingImgs ? `concept-${p.id}-genwait` : undefined} onClick={() => void revise()}>Pedir cambios</Button>
             {p.conceptApproved ? <Button onClick={() => goStage("edicion")}>Ir a Edición<ArrowRight aria-hidden /></Button> : null}
           </div>
+          {generatingImgs ? <p id={`concept-${p.id}-genwait`} className="small muted m-0 mt-2">Hay imágenes generándose: espera a que terminen para pedir cambios (la IA rehace la lista de apoyos).</p> : null}
           {p.conceptApproved ? null : (
             <div className="mt-4 grid gap-3 border-t border-[var(--line)] pt-4">
               <p className="m-0 text-[14px]">{editRunSummary(opts)}</p>
+              {(p.apoyos || []).some((a) => a.estado === "generando") ? <p className="small muted m-0">Hay imágenes generándose: espera a que terminen y apruébalas si quieres que entren en el video.</p> : null}
               <EditRunOptions o={opts} idPrefix={`concept-${p.id}`} disabled={running} />
               <div>
                 <Button disabled={running || approving || opts.invalid} onClick={() => void approve()}><Check aria-hidden />Aprobar propuesta</Button>

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import type { EditRunRequest, Project, StyleSummary } from "../../../../shared/types.ts";
 import { useApp } from "../../store.tsx";
+import { datosProblem } from "../../../../shared/apoyoLimits.ts";
 import { CapField, EstimateLine, capInvalid, parseCap, useCapValue, useEstimate } from "./Estimate.tsx";
 
 const CHECK = { width: 16, height: 16, padding: 0, margin: 0, accentColor: "var(--blue)", flex: "none" } as const;
@@ -26,6 +27,25 @@ export interface EditRunOpts {
   invalid: boolean;
   /** el cuerpo para approve/concept {edit} o edit/auto */
   request: () => EditRunRequest;
+  /** apoyos visuales: aprobados que se pueden usar, imágenes aprobadas con archivo (corte rápido), B-roll animados aprobados y sin aprobar */
+  apoyos: ApoyoCounts;
+}
+
+export interface ApoyoCounts { approved: number; images: number; animated: number; pending: number; /** clips y zooms aprobados (solo la plantilla los usa) */ clipsZooms: number }
+
+/** Cuenta los apoyos que usará la edición. Imagen y clip necesitan archivo; B-roll animado y zoom no. */
+export function apoyoCounts(p: Project): ApoyoCounts {
+  const list = p.apoyos || [];
+  // un B-roll animado aprobado que INS no puede construir (datosProblem) no se usa: el productor lo salta
+  const usable = list.filter((a) => a.aprobado && ((a.tipo !== "imagen" && a.tipo !== "clip") || !!a.archivo)
+    && !(a.tipo === "broll_animado" && datosProblem(a.animacion, a.datos)));
+  return {
+    approved: usable.length,
+    images: usable.filter((a) => a.tipo === "imagen").length,
+    animated: usable.filter((a) => a.tipo === "broll_animado").length,
+    clipsZooms: usable.filter((a) => a.tipo === "clip" || a.tipo === "zoom").length,
+    pending: list.filter((a) => !a.aprobado).length,
+  };
 }
 
 export function useEditRunOptions(p: Project): EditRunOpts {
@@ -67,13 +87,33 @@ export function useEditRunOptions(p: Project): EditRunOpts {
     flags: { ...(hasBrand ? { useBrand: true } : {}), music: true, formats: ["9x16"] },
     ...(quick ? {} : { capUsd: parseCap(cap) }),
   });
-  return { talkStyles, styleId, setStyleId, styleName, quick, setQuick, blocker, cap, setCap, est, hasBrand, invalid: !quick && capInvalid(cap), request };
+  return { talkStyles, styleId, setStyleId, styleName, quick, setQuick, blocker, cap, setCap, est, hasBrand, invalid: !quick && capInvalid(cap), request, apoyos: apoyoCounts(p) };
 }
 
 /** Texto «Al aprobar / Al editar: …» con lo que va a pasar. */
 export function editRunSummary(o: EditRunOpts, lead = "Al aprobar"): string {
-  if (o.quick || !o.styleName) return `${lead}: elegimos las mejores tomas y cortamos el video, con subtítulos. Corte rápido: gratis, sin plantilla.`;
-  return `${lead}: elegimos las mejores tomas, cortamos y producimos el video con la plantilla «${o.styleName}».`;
+  const quick = o.quick || !o.styleName;
+  const base = quick
+    ? `${lead}: elegimos las mejores tomas y cortamos el video, con subtítulos. Corte rápido: gratis, sin plantilla.`
+    : `${lead}: elegimos las mejores tomas, cortamos y producimos el video con la plantilla «${o.styleName}».`;
+  return [base, apoyosSummary(o.apoyos, quick)].filter(Boolean).join(" ");
+}
+
+/** Frase sobre los apoyos visuales que usará la edición ("" si no hay apoyos). */
+export function apoyosSummary(a: ApoyoCounts, quick: boolean): string {
+  const out: string[] = [];
+  if (quick) {
+    const imgs = a.images ? `El corte rápido incluye ${a.images} ${a.images === 1 ? "imagen" : "imágenes"}` : "";
+    // lo que el corte rápido NO dibuja (solo pone imágenes): B-roll animados, clips y zooms aprobados
+    const left = [a.animated ? "los B-roll animados" : "", a.clipsZooms ? "los clips y zooms aprobados" : ""].filter(Boolean).join(" y ");
+    if (imgs && left) out.push(`${imgs}; ${left} necesitan la plantilla.`);
+    else if (imgs) out.push(`${imgs}.`);
+    else if (left) out.push(`${left.charAt(0).toUpperCase() + left.slice(1)} necesitan la plantilla: el corte rápido no los incluye.`);
+  } else if (a.approved) {
+    out.push(a.approved === 1 ? "Se usará 1 apoyo aprobado." : `Se usarán ${a.approved} apoyos aprobados.`);
+  }
+  if (a.pending) out.push(a.pending === 1 ? "1 apoyo sin aprobar no se usará." : `${a.pending} apoyos sin aprobar no se usarán.`);
+  return out.join(" ");
 }
 
 /** Controles: plantilla, corte rápido, estimación y tope. */

@@ -26,7 +26,7 @@ const MODES = ["reel", "clase", "talking"] as const;
 const isTalkingEdit = (p: Project): boolean => Boolean(p.recording) && (p.production as { mode?: ProductionMode } | null | undefined)?.mode === "talking";
 
 const NEW_RUN_NOTICE = (p: Project): string =>
-  `El usuario pidió una corrida nueva de la plantilla sobre el corte actual (${p.edit?.final || p.edit?.cut || "edit/final.mp4"}): revisa que la secuencia use ese corte, aplica lo que pida y entrega un render final nuevo. Los renders anteriores ya no cuentan.`;
+  `El usuario pidió una corrida nueva de la plantilla sobre el corte actual (${p.edit?.cut || p.edit?.final || "edit/cut.mp4"}): revisa que la secuencia use ese corte limpio (nunca edit/final.mp4: ya trae subtítulos e imágenes de apoyo quemados), aplica lo que pida y entrega un render final nuevo. Los renders anteriores ya no cuentan.`;
 
 /** Corrida nueva de plantilla: editRun "plantilla" desde ahora (los renders anteriores no cuentan), sin video aprobado y
  *  de vuelta en Edición. */

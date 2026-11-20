@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 
 const STAGES_AI: [AiStage, string][] = [["analisis", "Análisis de referencias"], ["guion", "Guion"], ["concepto", "Propuesta visual"], ["edicion", "Selección de tomas"], ["publicar", "Paquete de publicación"], ["branding", "Marca"], ["inspiracion", "Análisis en Inspiración"], ["estilos", "Estilos"]];
 const PROVIDERS: Provider[] = ["anthropic", "openai"];
+const IMAGE_MODELS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-1-mini"];
+const IMAGE_QUALITY: [Settings["imageQuality"], string][] = [["low", "Baja"], ["medium", "Media"], ["high", "Alta"]];
 const PROV_DESC: Record<Provider, string> = { anthropic: "Modelos Claude. Recomendado.", openai: "Modelos GPT." };
 // Valores que se envían al servidor (sin cambiar) y su etiqueta visible.
 const EFFORT_OPTS: [Settings["effort"], string][] = [["low", "Rápido"], ["medium", "Equilibrado"], ["high", "A fondo"], ["xhigh", "Máximo"]];
@@ -198,6 +200,7 @@ export function SettingsPage() {
   const baseline = useRef<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const lastInvalid = useRef(0);
 
   // Equivale a volver a llamar renderSettings(): recarga ajustes y re-monta el formulario.
   const reload = useCallback(async () => {
@@ -381,6 +384,7 @@ export function SettingsPage() {
       elevenlabsKey: str("elevenlabsKey"), elevenVoiceId: str("elevenVoiceId").trim(), elevenTtsModel: str("elevenTtsModel").trim() || "eleven_multilingual_v2", producerModel: str("producerModel").trim() || "claude-opus-5-5", maxCostPerVideo,
       audioProvider: aud, localTtsEngine: ttsEng, localVoice: str("localVoice").trim(), sayVoice: str("sayVoice").trim() || sayDefault, hfToken: str("hfToken"),
       credits: { anthropic: str("credit_anthropic"), openai: str("credit_openai") }, hardStop: str("hardStop") === "1", effort: str("effort") as Settings["effort"], cookiesBrowser: str("cookiesBrowser"), models, customPrices, efforts, styleIterateSections: str("styleIterateSections") === "1",
+      imageProvider: "openai", imageModel: str("imageModel").trim() || "gpt-image-2", imageQuality: (str("imageQuality") || "medium") as Settings["imageQuality"],
     };
     setSaving(true);
     try {
@@ -391,6 +395,18 @@ export function SettingsPage() {
   };
 
   const onDiscard = () => { void reload(); };
+
+  // Un campo inválido en una pestaña oculta bloquearía «Guardar» sin aviso (el navegador no puede enfocarlo):
+  // se abre su pestaña, se enfoca y se muestra el motivo. Solo el primero de cada intento de guardar.
+  const onInvalid = (e: FormEvent<HTMLFormElement>) => {
+    const now = Date.now();
+    if (now - lastInvalid.current < 300) return;
+    lastInvalid.current = now;
+    const el = e.target as HTMLInputElement;
+    const panel = el.closest<HTMLElement>("[data-tab]")?.dataset.tab;
+    if (panel && panel !== tab) onTab(panel);
+    window.setTimeout(() => { el.focus(); el.reportValidity?.(); }, 0);
+  };
 
   const motionChecks = ([["playwright", "Playwright"], ["chromium", "Chromium"], ["python", "Python"], ["ffmpeg", "ffmpeg"], ["elevenlabs", "ElevenLabs"]] as const).filter(([k]) => k !== "elevenlabs" || aud === "elevenlabs");
   const ok = <Chip tone="ok">OK</Chip>;
@@ -403,7 +419,7 @@ export function SettingsPage() {
         <p className="mt-1 text-sm text-muted-foreground">Conecta tu IA, elige el audio y vincula tus cuentas. Nada cambia hasta que guardes.</p>
       </header>
 
-      <form ref={formRef} key={ver} onSubmit={(e) => { void onSubmit(e); }} onInput={checkDirty} onChange={checkDirty}>
+      <form ref={formRef} key={ver} onSubmit={(e) => { void onSubmit(e); }} onInvalidCapture={onInvalid} onInput={checkDirty} onChange={checkDirty}>
         <Tabs value={tab} onValueChange={onTab} className="gap-6">
           <TabsList aria-label="Secciones de ajustes">
             {TABS.map(({ id, label, icon: Icon }) => (
@@ -413,7 +429,7 @@ export function SettingsPage() {
 
           {/* forceMount: las pestañas inactivas siguen en el formulario (ocultas) para que se envíen todos los campos. */}
           {/* ---------------- IA ---------------- */}
-          <TabsContent value="ia" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <TabsContent value="ia" data-tab="ia" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
             <Card title="Proveedor de IA" desc="Todo el estudio (análisis, guiones, marca…) usa este proveedor. Puedes cambiarlo cuando quieras.">
               <div role="radiogroup" aria-label="Proveedor de IA" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {PROVIDERS.map((p) => (
@@ -467,8 +483,7 @@ export function SettingsPage() {
               </Advanced>
             </Card>
             <Card title="OpenAI" desc="Tus claves de OpenAI. La API key se usa para generar." hidden={prov !== "openai"}>
-              <SecretField name="openaiKey" label="API key" has={s.has.openai} placeholder={ph("openaiKey", s.has.openai, "sk-proj-…")} onClear={onClear} dirty={dirty}
-                help="platform.openai.com → API keys." />
+              <p className="m-0 text-[13px] text-muted-foreground">La API key de OpenAI está en <b className="font-medium text-foreground">Imágenes de apoyo</b>, más abajo: la misma clave sirve para todo.</p>
               <SecretField name="openaiAdminKey" label="Admin key (gasto real)" has={s.has.openaiAdmin} placeholder={ph("openaiAdminKey", s.has.openaiAdmin, "sk-admin-…")} onClear={onClear} dirty={dirty}
                 help="Opcional. platform.openai.com → Settings → Organization → Admin keys." />
               <Advanced>
@@ -482,15 +497,51 @@ export function SettingsPage() {
               </Advanced>
             </Card>
 
-            <Card title="Límite de gasto" desc="Cuánto quieres gastar al mes con el proveedor elegido y qué pasa al llegar al límite.">
+            {/* Siempre visible: las imágenes de apoyo usan OpenAI aunque el proveedor general sea Claude. Es el ÚNICO campo openaiKey del formulario. */}
+            <Card title="Imágenes de apoyo" desc="Ilustraciones para los apoyos visuales de la propuesta. Se generan solo cuando tocas «Generar» y se cobran a tu clave de OpenAI."
+              aside={s.has.openai ? null : <Chip tone="warn">Falta la API key de OpenAI</Chip>}>
+              <SecretField name="openaiKey" label="API key de OpenAI" has={s.has.openai} placeholder={ph("openaiKey", s.has.openai, "sk-proj-…")} onClear={onClear} dirty={dirty}
+                help={prov === "openai" ? "platform.openai.com → API keys. Es la misma clave del proveedor de IA." : "platform.openai.com → API keys. Mientras tu proveedor de IA sea Claude, solo se usa para las imágenes."} />
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="min-w-0">
+                  <label htmlFor="set-imageProvider" className={labelCls}>Proveedor</label>
+                  <select id="set-imageProvider" name="imageProvider" defaultValue="openai" className={cn(inputCls, "py-0")}>
+                    <option value="openai">OpenAI</option>
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <label htmlFor="set-imageModel" className={labelCls}>Modelo</label>
+                  <datalist id="dl_image">
+                    {IMAGE_MODELS.map((m) => <option key={m} value={m} />)}
+                  </datalist>
+                  <input id="set-imageModel" name="imageModel" list="dl_image" defaultValue={s.imageModel || "gpt-image-2"} spellCheck={false} className={cn(inputCls, "font-mono text-[13px]")} />
+                </div>
+                <div className="min-w-0">
+                  <label htmlFor="set-imageQuality" className={labelCls}>Calidad</label>
+                  <select id="set-imageQuality" name="imageQuality" defaultValue={s.imageQuality || "medium"} aria-describedby="set-imageQuality-help" className={cn(inputCls, "py-0")}>
+                    {IMAGE_QUALITY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <Help id="set-imageQuality-help">
+                {typeof state.usage?.imageUnitUsd === "number" && state.usage.imageUnitUsd > 0
+                  ? `Precio estimado con lo guardado: ≈ US$${state.usage.imageUnitUsd.toFixed(state.usage.imageUnitUsd < 0.1 ? 3 : 2)} por imagen vertical. `
+                  : ""}
+                Más calidad cuesta más por imagen. Vacío = gpt-image-2. Estilo por defecto: ilustración o motion graphics, sin resultados inventados ni caras reales.
+              </Help>
+            </Card>
+
+            <Card title="Límite de gasto" desc="Cuánto quieres gastar al mes con el proveedor elegido (y con OpenAI en imágenes de apoyo) y qué pasa al llegar al límite.">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div hidden={prov !== "anthropic"}>
                   <label htmlFor="set-credit_anthropic" className={labelCls}>Crédito mensual de Claude (USD)</label>
-                  <input id="set-credit_anthropic" name="credit_anthropic" type="number" min="0" step="1" inputMode="numeric" defaultValue={s.credits.anthropic} className={inputCls} />
+                  <input id="set-credit_anthropic" name="credit_anthropic" type="number" min="0" step="any" inputMode="decimal" defaultValue={s.credits.anthropic} className={inputCls} />
                 </div>
-                <div hidden={prov !== "openai"}>
-                  <label htmlFor="set-credit_openai" className={labelCls}>Crédito mensual de OpenAI (USD)</label>
-                  <input id="set-credit_openai" name="credit_openai" type="number" min="0" step="1" inputMode="numeric" defaultValue={s.credits.openai} className={inputCls} />
+                {/* Siempre visible: las imágenes de apoyo se cobran a OpenAI aunque el proveedor general sea Claude. Único campo credit_openai. */}
+                <div>
+                  <label htmlFor="set-credit_openai" className={labelCls}>{prov === "openai" ? "Crédito mensual de OpenAI (USD)" : "Límite mensual de OpenAI · imágenes de apoyo (USD)"}</label>
+                  <input id="set-credit_openai" name="credit_openai" type="number" min="0" step="any" inputMode="decimal" defaultValue={s.credits.openai} aria-describedby="set-credit_openai-help" className={inputCls} />
+                  <Help id="set-credit_openai-help">{prov === "openai" ? "Cuenta todo lo que Andoo gasta con OpenAI, imágenes incluidas." : "Cuenta todo lo cobrado a tu clave de OpenAI este mes: las imágenes de apoyo y, si este mes usaste OpenAI como proveedor general, también esas llamadas. Vacío o 0 = sin límite."}</Help>
                 </div>
                 <div>
                   <label htmlFor="set-hardStop" className={labelCls}>Al agotar el crédito</label>
@@ -523,7 +574,7 @@ export function SettingsPage() {
           </TabsContent>
 
           {/* ---------------- Audio ---------------- */}
-          <TabsContent value="audio" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <TabsContent value="audio" data-tab="audio" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
             <Card title="Modo de audio" desc="Cómo el productor genera la voz en off, la música y los efectos de sonido."
               aside={env ? (env.ready ? <Chip tone="ok">Listo</Chip> : <Chip tone="warn">Incompleto</Chip>) : null}>
               <div role="radiogroup" aria-label="Modo de audio" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -627,7 +678,7 @@ export function SettingsPage() {
           </TabsContent>
 
           {/* ---------------- Motor de video ---------------- */}
-          <TabsContent value="video" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <TabsContent value="video" data-tab="video" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
             <Card title="Estado del motor" desc="Lo que el motor necesita para hacer reels, clases y renders con estilo. La voz y la música se configuran en Audio."
               aside={state.motion ? (state.motion.ready ? <Chip tone="ok">Listo</Chip> : <Chip tone="warn">Incompleto</Chip>) : null}>
               {state.motion ? (
@@ -653,7 +704,7 @@ export function SettingsPage() {
           </TabsContent>
 
           {/* ---------------- Cuentas y fuentes ---------------- */}
-          <TabsContent value="cuentas" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <TabsContent value="cuentas" data-tab="cuentas" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
             <Card title="Instagram oficial (gratis)"
               desc={<>API oficial de Meta (Business Discovery). Carga perfil, Reels, likes y comentarios de cuentas <b className="font-medium text-foreground">profesionales</b>. No da vistas de cuentas ajenas: el outlier se calcula con likes y comentarios.</>}
               aside={s.metaIgUserId ? <Chip tone="ok">Conectado como @{s.metaIgUsername || s.metaIgUserId}</Chip> : <Chip>Sin detectar</Chip>}>
@@ -704,7 +755,7 @@ export function SettingsPage() {
           </TabsContent>
 
           {/* ---------------- General ---------------- */}
-          <TabsContent value="general" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <TabsContent value="general" data-tab="general" forceMount className="flex flex-col gap-4 data-[state=inactive]:hidden">
             <Card title="Tu estudio" desc="El nombre y las carpetas de tu Mac donde están tus videos.">
               <div>
                 <label htmlFor="set-studioName" className={labelCls}>Nombre de tu estudio</label>

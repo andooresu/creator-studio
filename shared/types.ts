@@ -1,6 +1,6 @@
 // Contratos compartidos entre servidor e interfaz. Si cambias una forma aquí,
 // el typecheck (npm run typecheck) señala todo lo que hay que ajustar en ambos lados.
-import type { Analysis, Script, Concept, Publish, BrandGuide } from "./schemas.ts";
+import type { Analysis, Script, Concept, Publish, BrandGuide, ApoyoPropuesta } from "./schemas.ts";
 
 export type Provider = "anthropic" | "openai";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
@@ -65,6 +65,10 @@ export interface Settings {
   anthropicWorkspaceId: string;
   /** Proveedor de música, voz y efectos del motor de video. */
   audioProvider: AudioProvider;
+  /** imágenes de apoyo (entrega 4): proveedor y modelo; se generan solo al tocar «Generar» */
+  imageProvider: "openai";
+  imageModel: string;
+  imageQuality: "low" | "medium" | "high";
   /** Modo local: motor de voz y voz elegida (Kokoro: em_alex, ef_dora…; Chatterbox: ruta de una muestra para clonar o vacío). */
   localTtsEngine: "kokoro" | "chatterbox";
   localVoice: string;
@@ -124,6 +128,10 @@ export interface EditResult {
   originalDuration: number;
   finalDuration: number;
   transcribed: boolean;
+  /** tramos de la grabación original que quedaron en el corte, en orden ([inicio_s, fin_s]); permite mapear tiempos originales → corte */
+  ranges?: [number, number][];
+  /** cuántas imágenes de apoyo se dibujaron en final.mp4 */
+  overlays?: number;
   at: string;
 }
 /** Pedido del camino de edición por defecto. quick=true: solo corte rápido (ffmpeg, sin plantilla ni costo del productor). */
@@ -152,6 +160,25 @@ export interface FinalVideo {
   fmt?: Format;
   at: string;
 }
+/** Apoyo visual guardado: la propuesta de la IA + estado de la app (nunca en el esquema que ve la IA). */
+export interface Apoyo extends ApoyoPropuesta {
+  /** índices de palabras en recording/words.json que cubre (ancla; null si no hay words.json) */
+  w0?: number | null;
+  w1?: number | null;
+  /** archivo (imagen o clip) relativo a la carpeta del proyecto, p. ej. "apoyos/<id>-<ts>.png" */
+  archivo?: string | null;
+  aprobado?: boolean;
+  estado?: "idle" | "generando" | "error";
+  error?: string | null;
+  /** costo de las generaciones de este apoyo (US$) */
+  costUsd?: number;
+  at?: string;
+  /** modelo y calidad de la generación en curso (solo mientras estado = "generando"): si la app se reinicia a mitad,
+   *  el costo estimado se registra con lo que realmente se pidió, no con lo que diga Ajustes en ese momento */
+  gen?: { model: string; quality: "low" | "medium" | "high" } | null;
+}
+/** Parche que acepta PATCH /apoyos/:aid */
+export type ApoyoPatch = Partial<Pick<Apoyo, "aprobado" | "modo" | "posicion" | "inicio_s" | "fin_s" | "contenido" | "prompt" | "datos" | "animacion">>;
 /** Tipo de video: talking head grabado (flujo por etapas), reel comercial o clase/explicador (motor de video). */
 export type ProjectKind = "talking" | "reel" | "clase";
 
@@ -204,6 +231,10 @@ export interface Project extends Jobbable {
   editRun?: EditRun | null;
   /** video aprobado en Edición: lo que usa Publicación (ruta relativa a la carpeta del proyecto) */
   finalVideo?: FinalVideo | null;
+  /** apoyos visuales (entrega 4): propuestos con la propuesta visual, revisados y aprobados por el usuario; guardados aparte de concept */
+  apoyos?: Apoyo[];
+  /** costo acumulado de imágenes generadas para este proyecto (US$) */
+  apoyosCostUsd?: number;
   publish?: Publish | null;
   published?: { url: string; at: string; trial: boolean } | null;
   createdAt: string;
@@ -291,6 +322,8 @@ export interface UsageRow {
   cacheRead?: number;
   /** parte de inputTokens escrita en la caché (cuesta un poco más que la entrada normal) */
   cacheWrite?: number;
+  /** cobro estimado (imagen que OpenAI pudo cobrar sin que llegara: reinicio o respuesta inválida), no una imagen hecha */
+  estimated?: boolean;
 }
 export interface ProviderSpend {
   provider: Provider;
@@ -323,6 +356,20 @@ export interface UsageSummary {
   keySet: boolean;
   /** hay clave de Anthropic (la necesita el productor de la plantilla, aunque el proveedor elegido sea otro) */
   anthropicKeySet?: boolean;
+  /** hay clave de OpenAI (la necesitan las imágenes de apoyo) */
+  openaiKeySet?: boolean;
+  /** precio estimado de una imagen de apoyo con el modelo y calidad de Ajustes (US$) */
+  imageUnitUsd?: number;
+  /** gasto del mes en imágenes de apoyo (filas stage "imagenes", siempre a la clave de OpenAI), sea cual sea el proveedor general */
+  imagesSpent?: number;
+  /** imágenes de apoyo generadas este mes (sin contar los cobros estimados) */
+  imagesCalls?: number;
+  /** cobros estimados de imágenes que no llegaron (reinicio o respuesta inválida) este mes */
+  imagesEstimated?: number;
+  /** crédito mensual de OpenAI de Ajustes (0 = sin límite): frena las imágenes aunque el proveedor general sea Claude */
+  openaiCredit?: number;
+  /** gasto del mes con OpenAI registrado por Andoo (texto con OpenAI + imágenes), el que compara el freno de imágenes */
+  openaiSpent?: number;
 }
 
 // ---------- Herramientas locales ----------

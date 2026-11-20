@@ -18,6 +18,7 @@ const SECTION_LABEL: Record<string, string> = {
   branding: "Marca",
   produccion: "Producción",
   estilos: "Estilos",
+  imagenes: "Imágenes de apoyo",
 };
 const sectionName = (k: string) => SECTION_LABEL[k] || k.charAt(0).toUpperCase() + k.slice(1);
 
@@ -185,6 +186,14 @@ export function Usage() {
   // El resumen no dice si hay Admin key: el servidor (server/ai.ts) solo usa este motivo cuando falta. Cualquier otro
   // motivo es un error real al consultar al proveedor (key inválida, sin permisos, red…) y se muestra tal cual.
   const noAdminKey = !pi.reason || /^Agrega la Admin key/i.test(pi.reason);
+  // Imágenes de apoyo: se cobran siempre a la clave de OpenAI. Con Claude como proveedor general NO están en «Gastado
+  // este mes» (que es del proveedor general): se muestran en su propia tarjeta y en el desglose por sección.
+  const imgSpent = u.imagesSpent || 0;
+  const imgSeparate = u.provider !== "openai";
+  const showImages = imgSpent > 0 || !!u.openaiKeySet || (u.openaiCredit || 0) > 0;
+  const oaCredit = u.openaiCredit || 0;
+  const oaSpent = u.openaiSpent || 0;
+  const breakdownTotal = u.studioSpent + (imgSeparate ? imgSpent : 0);
 
   return (
     <div className="flex flex-col gap-6 min-w-0">
@@ -232,7 +241,7 @@ export function Usage() {
       </header>
 
       {/* Resumen: 3 tarjetas */}
-      <section aria-label="Resumen del mes" className="grid gap-4 md:grid-cols-3">
+      <section aria-label="Resumen del mes" className={cn("grid gap-4", showImages ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3")}>
         <div className={tile}>
           <span className={tileLabel}>Gastado este mes</span>
           <span className={bigNum}>{usd(u.spent)}</span>
@@ -285,6 +294,25 @@ export function Usage() {
             </span>
           ) : null}
         </div>
+
+        {showImages ? (
+          <div className={tile}>
+            <span className={tileLabel}>Imágenes de apoyo (OpenAI)</span>
+            <span className={bigNum}>{usd(imgSpent)}</span>
+            <span className="text-sm text-muted-foreground">
+              {(u.imagesCalls || 0).toLocaleString(LOCALE)} {u.imagesCalls === 1 ? "imagen" : "imágenes"} este mes
+              {u.imagesEstimated ? ` · ${u.imagesEstimated.toLocaleString(LOCALE)} ${u.imagesEstimated === 1 ? "cobro estimado" : "cobros estimados"} (no llegaron)` : ""} ·{" "}
+              {imgSeparate ? `se cobran a tu clave de OpenAI, aparte de ${P}` : "ya incluidas en el gasto de arriba"}
+            </span>
+            {oaCredit > 0 ? (
+              <span className={cn("text-sm", oaSpent > oaCredit ? "text-danger" : "text-muted-foreground")}>
+                Límite de OpenAI: {usd(oaSpent)} de {usd(oaCredit)} · te queda {usd(Math.max(0, oaCredit - oaSpent))}
+              </span>
+            ) : (
+              <a href="#/ajustes" className="text-sm">Poner límite mensual de OpenAI en Ajustes</a>
+            )}
+          </div>
+        ) : null}
       </section>
       <p className="-mt-3 text-sm text-muted-foreground">
         «Te queda» = crédito que pusiste − gasto del mes. Los proveedores no exponen el saldo real por API.
@@ -296,7 +324,10 @@ export function Usage() {
         <div className={cn(tile, "gap-4")}>
           <div className="flex flex-col gap-0.5">
             <h3 className={sectionTitle}>Por sección</h3>
-            <p className="text-sm text-muted-foreground">Gasto desde Andoo: {usd(u.studioSpent)}</p>
+            <p className="text-sm text-muted-foreground">
+              Gasto desde Andoo: {usd(breakdownTotal)}
+              {imgSeparate && imgSpent > 0 ? ` (incluye ${usd(imgSpent)} de imágenes de apoyo con OpenAI)` : ""}
+            </p>
           </div>
           <StageMeter data={u.byStage} />
         </div>

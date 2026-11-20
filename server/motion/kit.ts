@@ -19,12 +19,12 @@ const VENV_PY = path.join(VENV, "bin", "python");
 const PY_MODULES = ["librosa", "numpy", "scipy", "soundfile", "PIL", "faster_whisper"];
 
 const ENGINE_FILES = ["index.html", "core.js", "type.js", "film.js"];
-const ENGINE_LIB_FILES = ["motion.js", "motion.test.js", "media.js", "captions.js"];
+const ENGINE_LIB_FILES = ["motion.js", "motion.test.js", "media.js", "captions.js", "inserts.js"];
 const SCRIPT_FILES = [
   "render.mjs", "sync.mjs", "sfx.mjs", "capture.mjs", "beats.py", "music.py", "vo.py", "words.py", "mix.py", "review.py",
   "preset.mjs", "compare_music.py", "lint.mjs", "seq.py", "grade.py", "ref_analyze.py",
 ];
-const SUBDIRS = ["film/lib", "scripts", "docs", "audio/vo", "assets/fonts/captions", "assets/brand", "assets/cap", "renders", "review"];
+const SUBDIRS = ["film/lib", "scripts", "docs", "audio/vo", "assets/fonts/captions", "assets/brand", "assets/cap", "assets/apoyos", "renders", "review"];
 
 // ---------------------------------------------------------------- entorno
 function hasCmd(cmd: string): boolean {
@@ -257,6 +257,43 @@ export function scaffoldDir(dir: string, owner: string, opts: ScaffoldOpts = {})
   fs.writeFileSync(path.join(dir, SCAFFOLD_MARKER), `ok ${new Date().toISOString()}\n`);
   fs.rmSync(path.join(dir, SCAFFOLD_PENDING), { force: true });
   return dir;
+}
+
+/**
+ * Reparación barata de una carpeta ya preparada (proyectos creados antes de que existiera un archivo del motor):
+ * copia film/lib/inserts.js si falta o difiere del kit, crea assets/apoyos y, si film/index.html carga film.js sin
+ * cargar antes lib/inserts.js, agrega esa etiqueta justo antes de film.js. Nunca lanza: devuelve lo que cambió.
+ */
+export function repairEngineLibs(dir: string): string[] {
+  const done: string[] = [];
+  try {
+    if (!fs.existsSync(path.join(dir, "film"))) return done;
+    fs.mkdirSync(path.join(dir, "assets", "apoyos"), { recursive: true });
+    const src = path.join(MOTION_DIR, "engine", "lib", "inserts.js");
+    const dst = path.join(dir, "film", "lib", "inserts.js");
+    const want = fs.readFileSync(src);
+    let have: Buffer | null = null;
+    try { if (!fs.lstatSync(dst).isSymbolicLink()) have = fs.readFileSync(dst); } catch {}
+    if (!have || !have.equals(want)) {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.rmSync(dst, { force: true }); // por si era un enlace: siempre una copia real dentro del proyecto
+      fs.writeFileSync(dst, want);
+      // "repuesta": había una copia distinta (versión vieja del kit o una edición del agente) y se reemplazó
+      done.push(have ? "film/lib/inserts.js (repuesta)" : "film/lib/inserts.js");
+    }
+    const html = path.join(dir, "film", "index.html");
+    if (fs.existsSync(html) && !fs.lstatSync(html).isSymbolicLink()) {
+      const s = fs.readFileSync(html, "utf8");
+      const tag = /<script src="(?:\.\/)?film\.js"><\/script>/;
+      if (!s.includes("lib/inserts.js") && tag.test(s)) {
+        fs.writeFileSync(html, s.replace(tag, (m) => `<script src="lib/inserts.js"></script>\n${m}`));
+        done.push("film/index.html");
+      }
+    }
+  } catch (e) {
+    console.warn(`[motor] no se pudo reparar ${dir}: ${(e as Error)?.message || e}`);
+  }
+  return done;
 }
 
 // ---------------------------------------------------------------- chequeo previo a ejecutar fuera del sandbox

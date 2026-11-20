@@ -40,6 +40,29 @@ export const Concept = z.object({
   ritmo: z.string(),
 });
 
+/**
+ * Apoyo visual propuesto por la IA (entrega 4). Esquema apto para OpenAI strict: todo requerido, sin optional.
+ * Tiempos en segundos de la GRABACIÓN ORIGINAL; "frase" = palabras exactas de la voz donde entra (ancla para re-sincronizar tras el corte).
+ */
+export const ApoyoPropuesta = z.object({
+  id: z.string().describe("conserva el id de la propuesta anterior si el apoyo sigue; \"\" si es nuevo"),
+  tipo: z.enum(["imagen", "broll_animado", "clip", "zoom"]),
+  inicio_s: z.number(),
+  fin_s: z.number(),
+  frase: z.string().describe("palabras exactas de la voz donde entra"),
+  modo: z.enum(["encima", "pantalla_completa"]),
+  posicion: z.enum(["arriba", "centro", "abajo"]),
+  contenido: z.string().describe("qué muestra y por qué ilustra lo que dice la voz"),
+  prompt: z.string().describe("solo tipo imagen: descripción para generar la ilustración; \"\" si no aplica"),
+  animacion: z.enum(["palabras", "cifra", "pasos", "comparacion", "lista", "ninguna"]).describe("solo broll_animado: plantilla de motion graphics; \"ninguna\" si no aplica"),
+  datos: z.array(z.string()).describe("solo broll_animado: textos/cifras que DICE la voz (nunca inventados); [] si no aplica"),
+  fuente: z.enum(["generar", "carpeta", "motion"]),
+});
+/** Lo que pide proposeConcept: el concepto más la lista de apoyos (el servidor guarda los apoyos aparte, en Project.apoyos). */
+export const ConceptProposal = Concept.extend({ apoyos: z.array(ApoyoPropuesta) });
+/** Respuesta de «Proponer apoyos» para conceptos guardados sin apoyos. */
+export const ApoyosProposal = z.object({ apoyos: z.array(ApoyoPropuesta) });
+
 export const Publish = z.object({
   caption: z.string(),
   hashtags: z.array(z.string()),
@@ -88,6 +111,7 @@ export const BrandProposals = z.object({ propuestas: z.array(BrandGuide) });
 export type Analysis = z.infer<typeof Analysis>;
 export type Script = z.infer<typeof Script>;
 export type Concept = z.infer<typeof Concept>;
+export type ApoyoPropuesta = z.infer<typeof ApoyoPropuesta>;
 export type Publish = z.infer<typeof Publish>;
 export type TakePlan = z.infer<typeof TakePlan>;
 export type BrandGuide = z.infer<typeof BrandGuide>;

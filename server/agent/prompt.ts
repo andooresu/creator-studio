@@ -8,6 +8,8 @@ import { brandToPrompt } from "../brand.ts";
 import { stagesFor, MAX_QUESTION_ROUNDS, QUESTIONS_PER_ROUND } from "./progress.ts";
 import { brandColors, validHex, brandPresetApplied, brandLogoInDir } from "./brandPreset.ts";
 import { FORMATS } from "../../shared/types.ts";
+import { mapToCut } from "../editor.ts";
+import { datosProblem } from "../../shared/apoyoLimits.ts";
 import type { AudioProvider, Brand, Format, Project, Settings, Style } from "../../shared/types.ts";
 
 /** temporal propio del agente (TMPDIR de sus procesos y único temporal que el sandbox deja escribir) */
@@ -155,10 +157,54 @@ function projectData(p: Project, mode: ProductionMode, flags?: StartFlags): stri
     }
     if (p.edit) {
       const abs = (rel: string | null): string => (rel ? path.join(pdir, rel) : "(no)");
-      out.push(`- Resultado de la edición automática: corte ${abs(p.edit.cut)} · final ${abs(p.edit.final)} · subtítulos SRT ${abs(p.edit.srtPath)} · ${p.edit.segments} segmentos, ${p.edit.originalDuration?.toFixed?.(1)} → ${p.edit.finalDuration?.toFixed?.(1)} s (modo ${p.edit.mode}).`);
+      out.push(`- Resultado de la edición automática: corte limpio ${abs(p.edit.cut)} (la base que se importa) · final ${abs(p.edit.final)} (vista rápida para publicar: si es distinto del corte ya trae subtítulos e imágenes de apoyo quemados — nunca lo importes) · subtítulos SRT ${abs(p.edit.srtPath)} · ${p.edit.segments} segmentos, ${p.edit.originalDuration?.toFixed?.(1)} → ${p.edit.finalDuration?.toFixed?.(1)} s (modo ${p.edit.mode}).`);
     }
+    const ap = apoyosData(p);
+    if (ap) out.push(ap);
   }
   return out.join("\n");
+}
+
+const TIPO_APOYO: Record<string, string> = { imagen: "imagen", broll_animado: "B-roll animado", clip: "clip", zoom: "zoom" };
+
+/**
+ * Por qué un apoyo aprobado NO se puede insertar ("" si se puede): imagen o clip sin archivo, o B-roll animado sin
+ * animación, sin los datos que su animación necesita (INS.full se niega a construirlo: taparía a la persona con un panel
+ * vacío) o con datos que no caben legibles (shared/apoyoLimits.ts).
+ * La usan docs/apoyos.json (syncApoyos) y los datos del proyecto en el prompt.
+ */
+export function apoyoSkip(a: { tipo: string; animacion?: string; datos?: unknown[] }, hasFile: boolean): string {
+  if ((a.tipo === "imagen" || a.tipo === "clip") && !hasFile) return "no tiene archivo";
+  if (a.tipo !== "broll_animado") return "";
+  // misma regla que INS (vacio() y tamaño mínimo legible) y que el botón Aprobar: sin animación, sin datos o datos que no caben
+  return datosProblem(a.animacion, a.datos);
+}
+const t2 = (x: number): string => (Math.round(x * 100) / 100).toFixed(2);
+
+/**
+ * Apoyos visuales APROBADOS (los mismos que syncApoyos copia a assets/apoyos/ y escribe en docs/apoyos.json), con sus
+ * tiempos en el corte y las rutas relativas a la carpeta del motor. "" si no hay.
+ */
+export function apoyosData(p: Project): string {
+  const list = (p.apoyos || []).filter((a) => a && a.aprobado).sort((a, b) => a.inicio_s - b.inicio_s);
+  if (!list.length) return "";
+  const ranges = p.edit?.ranges?.length ? p.edit.ranges : null;
+  const rows = list.map((a) => {
+    const m = ranges ? mapToCut(a.inicio_s, a.fin_s, ranges) : null;
+    const when = m ? `corte ${t2(m.s)}–${t2(m.e)} s` : ranges ? "el corte quitó este tramo: re-ubícalo por la frase o sáltalo" : `original ${t2(a.inicio_s)}–${t2(a.fin_s)} s (sin tramos del corte: re-temporízalo con la frase)`;
+    // misma regla que syncApoyos: solo archivos regulares dentro de la carpeta del proyecto
+    const pdir = path.resolve(projectDir(p.id));
+    let real = "";
+    try { if (a.archivo) { real = fs.realpathSync(path.resolve(pdir, a.archivo)); if (!real.startsWith(fs.realpathSync(pdir) + path.sep) || !fs.statSync(real).isFile()) real = ""; } } catch { real = ""; }
+    const ext = real ? path.extname(real).toLowerCase().replace(".jpeg", ".jpg") : "";
+    const file = real ? ` · archivo assets/apoyos/${String(a.id).replace(/[^\w-]/g, "_")}${ext}` : a.tipo === "imagen" ? " · SIN archivo (no lo inventes ni lo generes)" : "";
+    const anim = a.tipo === "broll_animado" ? ` · animación ${a.animacion} · datos ${JSON.stringify(a.datos || [])}` : "";
+    const skip = apoyoSkip(a, Boolean(real));
+    if (skip) return `   - [${a.id}] NO USABLE (${skip}): sáltalo, no lo insertes ni lo rellenes · ${TIPO_APOYO[a.tipo] || a.tipo} · ${when} · «${cut(a.frase, 120)}»`;
+    return `   - [${a.id}] ${TIPO_APOYO[a.tipo] || a.tipo} (${a.modo === "encima" ? `encima, ${a.posicion}` : "pantalla completa"}) · ${when} · «${cut(a.frase, 120)}» · ${cut(a.contenido, 160)}${anim}${file}`;
+  });
+  return `- Apoyos visuales APROBADOS por el usuario (${list.length}; obligatorios; detalle en docs/apoyos.json, archivos en assets/apoyos/):\n${rows.join("\n")}\n` +
+    `   - assets/apoyos/ es de la app: la repone en cada inicio y borra los archivos de apoyos que ya no están aprobados. No edites ni reemplaces esos archivos; si necesitas un derivado (un recorte, una versión para la tarjeta), guárdalo en assets/img/ y apunta el film ahí.`;
 }
 
 const FMT_RE: [Format, RegExp][] = [["9x16", /\b9\s*[:x×/]\s*16\b/i], ["4x5", /\b4\s*[:x×/]\s*5\b/i], ["1x1", /\b1\s*[:x×/]\s*1\b/i], ["16x9", /\b16\s*[:x×/]\s*9\b/i]];
@@ -249,8 +295,15 @@ Reel publicitario / de lanzamiento: concepto con STRATEGY.md, música original p
   if (mode === "clase") return `## Modo: CLASE / EXPLICADOR
 Video explicativo por secciones (hook → problema → 2–4 ideas → resumen/CTA). La voz (VO) manda: escribe el guion por secciones, genera la locución, alinea palabras con scripts/words.py y ancla cada aparición (título, diagrama, lista, número, resaltado) a la palabra exacta que la dice (C.beatAt(p.t0) con VO[i].words). Ritmo de lectura cómodo, una idea por pantalla, subtítulos según el estilo. Música de fondo discreta con ducking bajo la voz.`;
   return `## Modo: TALKING HEAD (grabación del creador)
-La base es el video del creador hablando a cámara: CONSERVA SU VOZ (no generes VO ni reemplaces el audio de la voz). Usa el corte de la edición automática si existe (o el plan de tomas sobre la grabación original) e impórtalo como secuencia con \`.venv/bin/python scripts/seq.py <nombre> <video> <inicio_s> <dur_s>\` (elige ventanas con \`seq.py --strip\`); dibújalo con C.seq / C.drawSeq. El audio de la voz sale del mismo video (extráelo con ffmpeg a audio/voice.wav, 48 kHz) y entra en la mezcla como pista principal; la música va debajo con ducking.
-Subtítulos desde los tiempos por palabra (words.json de la grabación, re-temporizados al corte si recortas) con el preset de subtítulos del estilo. Encima: punch-ins/zooms en las frases fuertes, gráficos y textos según el concepto aprobado y el estilo, B-roll solo si el usuario lo aporta. Nunca tapes la cara con texto; respeta las zonas seguras de 9:16.
+La base es el video del creador hablando a cámara: CONSERVA SU VOZ (no generes VO ni reemplaces el audio de la voz). Usa el corte limpio de la edición automática si existe (edit/cut.mp4; nunca edit/final.mp4, que ya trae subtítulos e imágenes de apoyo quemados) (o el plan de tomas sobre la grabación original) e impórtalo como secuencia con \`.venv/bin/python scripts/seq.py <nombre> <video> <inicio_s> <dur_s>\` (elige ventanas con \`seq.py --strip\`); dibújalo con C.seq / C.drawSeq. El audio de la voz sale del mismo video (extráelo con ffmpeg a audio/voice.wav, 48 kHz) y entra en la mezcla como pista principal; la música va debajo con ducking.
+Subtítulos desde los tiempos por palabra (words.json de la grabación, re-temporizados al corte si recortas) con el preset de subtítulos del estilo. Encima: punch-ins/zooms en las frases fuertes, gráficos y textos según el concepto aprobado y el estilo. Nunca tapes la cara con texto; respeta las zonas seguras de 9:16.
+### Apoyos visuales (docs/apoyos.json)
+- Los apoyos APROBADOS son insertos OBLIGATORIOS en sus tiempos de corte (\`corte.s\`–\`corte.e\`, segundos de edit/cut.mp4). Si el corte cambió o \`corte\` es null, re-ubícalos por su \`frase\` con los tiempos por palabra. Los no aprobados no existen para ti. Excepción: los que traen \`usable: false\` (sin archivo, sin animación elegida, o datos que faltan o no caben legibles; el motivo va en \`motivo\`) se saltan: no los insertes ni los rellenes (INS.full se niega a construirlos).
+- \`film/lib/inserts.js\` es de solo lectura: la app la repone desde el kit en cada inicio o reanudación, así que no la edites. Los textos largos se ajustan solos a su caja sin bajar del mínimo de lint (reparte en más líneas, junta filas, suelta los detalles de la comparación); si un «encima» no cabe así, pasa solo a pantalla completa (\`ins.modo\` lo dice tras el primer \`run\`: mueve los subtítulos si hace falta). Si necesitas otro aspecto, hazlo en film.js (CSS propio sobre las clases \`.ins-*\` o las opciones de \`INS.full\`).
+- La librería es \`film/lib/inserts.js\` (\`window.INS\`; cárgala en film/index.html después de talking.js y antes de film.js). \`INS.full(root, { kind, datos, inAt: INS.sec(corte.s), outAt: INS.sec(corte.e), modo, posicion, src })\` en build() y \`ins.run(t)\` en run(); inAt/outAt van en beats o marcas (INS.sec convierte segundos).
+- \`imagen\` → \`INS.full\` con \`kind: "imagen"\` y \`src: "../" + archivo\` (lleva Ken Burns y respeta la forma de la imagen: una ilustración vertical no se recorta; no uses C.photo para apoyos, que la recorta a su caja). \`broll_animado\` → \`INS.full\` con \`kind\` = su \`animacion\` (palabras, cifra, pasos, comparacion, lista) y sus \`datos\`; a pantalla completa o encima según \`modo\`. Usa SIEMPRE el movimiento propio de INS (no pases \`move: false\` ni lo envuelvas en TALK.broll): sale hacia ARRIBA y así sus textos no cruzan la franja de subtítulos al salir. \`clip\` → secuencia con scripts/seq.py desde su archivo dentro de la tarjeta de b-roll. \`zoom\` → punch-in en ese tramo.
+- Los subtítulos siguen visibles encima de los insertos; si un inserto ocupa la franja de subtítulos, muévelos con \`captions.yAt\` (SEGUNDOS: \`INS.liftCaptions(inAt, outAt, y)\`) y corre lint.mjs.
+- Nunca generes, reemplaces ni inventes imágenes, cifras ni textos: los textos y números salen solo de \`datos\` (lo que dice la voz). Nunca simules resultados (antes/después de clientes, métricas, testimonios, capturas de paneles). Sin apoyos aprobados, no agregues b-roll de relleno.
 ### Música en este modo (manda sobre AUDIO.md y sobre "Audio del motor")
 ${flags?.music === false
     ? "- El usuario APAGÓ la música de fondo: no generes música ni la propongas. La mezcla es la voz (más SFX sutiles si el estilo los usa). Solo agrega música si él la pide después en el chat."
@@ -422,7 +475,7 @@ function interviewGuide(p: Project, mode: ProductionMode, brand: boolean, locked
       brand ? "guía de marca" : "",
     ].filter(Boolean);
     const talk = mode === "talking"
-      ? `\n- No preguntes (modo talking): la persona de la VO (la voz es la del creador), el material o B-roll (usa lo que haya), investigar el sitio, prueba social, familias de concepto${brand ? ", colores ni tipografías (los da la marca)" : ""}, ni nada que ya venga en "Ya respondido" del arranque.`
+      ? `\n- No preguntes (modo talking): la persona de la VO (la voz es la del creador), el material o B-roll (usa lo que haya y los apoyos aprobados de docs/apoyos.json), investigar el sitio, prueba social, familias de concepto${brand ? ", colores ni tipografías (los da la marca)" : ""}, ni nada que ya venga en "Ya respondido" del arranque.`
       : `\n- No preguntes lo que ya responden el guion, el concepto${brand ? " o la marca (colores, tipografías, voz)" : ""}, ni nada que ya venga en "Ya respondido" del arranque.`;
     return `# Arranque y preguntas (manda sobre INTERVIEW.md y sobre "al pie de la letra")
 Este proyecto ya trae lo necesario (${have.join(", ")}): NO hagas la entrevista creativa.

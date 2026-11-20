@@ -5,7 +5,7 @@ import OpenAI from "openai";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 import { load, save, id } from "./db.ts";
-import type { AiStage, Effort, ModelPrice, Provider, ProviderSpend, UsageSummary } from "../shared/types.ts";
+import type { AiStage, Effort, ModelPrice, Provider, ProviderSpend, UsageRow, UsageSummary } from "../shared/types.ts";
 
 // USD por millón de tokens. Claude: tarifas API Anthropic (nov-2026).
 // OpenAI: editables en Ajustes — verifica en openai.com/api/pricing.
@@ -65,6 +65,102 @@ const keyOf = (prov: Provider): string | undefined => {
   return prov === "openai" ? s.openaiKey || process.env.OPENAI_API_KEY : s.apiKey || process.env.ANTHROPIC_API_KEY;
 };
 export const hasKey = (prov: Provider = load().settings.provider): boolean => Boolean(keyOf(prov));
+/** Clave de OpenAI (Ajustes o OPENAI_API_KEY): la usan las imágenes de apoyo aunque el proveedor general sea Claude. */
+export const openaiKey = (): string | undefined => keyOf("openai");
+
+// ---------- Imágenes de apoyo (entrega 4) ----------
+// Fuera de MODELS a propósito: no son modelos de texto (no deben aparecer en los selectores por etapa ni en el catálogo).
+// Tarifas en US$ por millón de tokens + precio plano por imagen 1024x1536 (estimación cuando la API no devuelve `usage`).
+// Fuente: developers.openai.com/api/docs/pricing y la guía de generación de imágenes (consultadas el 2026-11-19).
+// El costo real se calcula con `usage` siempre que llegue.
+export type ImageQuality = "low" | "medium" | "high";
+export interface ImagePrice { textIn: number; imageIn: number; imageOut: number; textOut: number; perImage: Record<ImageQuality, number>; label: string }
+export const IMAGE_PRICES: Record<string, ImagePrice> = {
+  "gpt-image-2": { textIn: 5, imageIn: 8, imageOut: 30, textOut: 10, perImage: { low: 0.005, medium: 0.041, high: 0.165 }, label: "GPT Image 2" },
+  "gpt-image-1.5": { textIn: 5, imageIn: 8, imageOut: 32, textOut: 10, perImage: { low: 0.013, medium: 0.05, high: 0.2 }, label: "GPT Image 1.5" },
+  "gpt-image-1-mini": { textIn: 2, imageIn: 2.5, imageOut: 8, textOut: 8, perImage: { low: 0.006, medium: 0.015, high: 0.052 }, label: "GPT Image 1 mini" },
+  // gpt-image-1: US$40/M de salida de imagen y US$10/M de entrada de imagen; 1024x1536 ≈ 0.016 / 0.063 / 0.25 (2026-11-20, verificar).
+  "gpt-image-1": { textIn: 5, imageIn: 10, imageOut: 40, textOut: 10, perImage: { low: 0.016, medium: 0.063, high: 0.25 }, label: "GPT Image 1" },
+};
+// Modelos sin tarifa conocida (p. ej. gpt-image-2.5-*): estimación conservadora, al menos la tarifa más alta conocida
+// en cada concepto (salida US$40/M, entrada de imagen US$10/M, alta ≥ US$0.25 por imagen) (2026-11-20, verificar).
+const IMAGE_FALLBACK: ImagePrice = { textIn: 5, imageIn: 10, imageOut: 40, textOut: 10, perImage: { low: 0.02, medium: 0.08, high: 0.3 }, label: "Modelo de imagen" };
+
+export function imagePriceFor(model: string): ImagePrice {
+  if (IMAGE_PRICES[model]) return IMAGE_PRICES[model];
+  const base = Object.keys(IMAGE_PRICES).sort((a, b) => b.length - a.length).find((k) => model.startsWith(k + "-"));
+  return (base && IMAGE_PRICES[base]) || IMAGE_FALLBACK;
+}
+
+/** Uso de tokens de images.generate (forma del SDK de OpenAI). */
+export interface ImageUsage {
+  input_tokens?: number; output_tokens?: number;
+  input_tokens_details?: { image_tokens?: number; text_tokens?: number } | null;
+  output_tokens_details?: { image_tokens?: number; text_tokens?: number } | null;
+}
+
+/** Precio estimado de una imagen 1024x1536 con el modelo y la calidad dados (por defecto, los de Ajustes). */
+export function imageUnitUsd(model?: string, quality?: ImageQuality): number {
+  const s = load().settings;
+  const p = imagePriceFor(model || s.imageModel || "gpt-image-2");
+  return p.perImage[quality || s.imageQuality || "medium"] ?? p.perImage.medium;
+}
+
+/** Costo de una generación: por tokens si la API devolvió `usage`; si no, el precio plano por imagen. */
+export function imageCostOf(model: string, quality: ImageQuality, usage?: ImageUsage | null): number {
+  if (!usage || !(usage.input_tokens || usage.output_tokens)) return imageUnitUsd(model, quality);
+  const p = imagePriceFor(model);
+  const inImg = usage.input_tokens_details?.image_tokens ?? 0;
+  const inText = usage.input_tokens_details?.text_tokens ?? Math.max(0, (usage.input_tokens || 0) - inImg);
+  const outText = usage.output_tokens_details?.text_tokens ?? 0;
+  const outImg = usage.output_tokens_details?.image_tokens ?? Math.max(0, (usage.output_tokens || 0) - outText);
+  return Math.round(((inText * p.textIn + inImg * p.imageIn + outImg * p.imageOut + outText * p.textOut) / 1e6) * 1e6) / 1e6;
+}
+
+/** Fila de cobro estimado de una imagen que no llegó (no una imagen generada). */
+const isEstimatedImage = (u: UsageRow): boolean => !!u.estimated || (u.ms === 0 && !u.inputTokens && !u.outputTokens);
+
+/** Gasto de OpenAI del mes según las filas de uso (texto con OpenAI + imágenes de apoyo). */
+function openaiMonthSpent(): number {
+  const mk = monthKey();
+  return load().usage.filter((u) => u.at.startsWith(mk) && u.provider === "openai").reduce((a, u) => a + (u.cost || 0), 0);
+}
+
+/** Montos de imágenes (centavos) con 3 decimales; desde US$1, con 2. */
+const money = (n: number): string => n.toFixed(Math.abs(n) > 0 && Math.abs(n) < 1 ? 3 : 2);
+
+// Estimaciones de las imágenes que se están generando: su fila de uso solo existe al terminar, así que sin esta reserva
+// varios «Generar» seguidos pasarían todos el freno contra el mismo gasto.
+let openaiReserved = 0;
+
+/** Freno de crédito para imágenes: crédito mensual de OpenAI contra las filas de uso de OpenAI del mes más lo que ya está
+ *  en curso (independiente del proveedor general). Lanza en español si se pasaría del crédito y el freno está activo. */
+export function checkOpenAICredit(estimate = 0): void {
+  const s = load().settings;
+  const credit = Number(s.credits?.openai ?? 0);
+  if (!s.hardStop || !credit) return;
+  const spent = openaiMonthSpent();
+  if (spent + openaiReserved + estimate > credit) {
+    const used = spent + openaiReserved;
+    const pend = openaiReserved > 0 ? ` y US$${money(openaiReserved)} en imágenes que se están generando` : "";
+    // «agotado» solo cuando ya no queda nada; si queda algo, lo que no cabe es esta imagen: su precio y cuánto queda
+    if (used >= credit || estimate <= 0) throw new Error(`Crédito de OpenAI del mes agotado (US$${money(spent)} gastados${pend}, de US$${money(credit)}). Ajústalo en Ajustes o desactiva el freno.`);
+    throw new Error(`Esta imagen (≈ US$${money(estimate)}) superaría tu límite de OpenAI: te quedan US$${money(credit - used)} de US$${money(credit)}${openaiReserved > 0 ? ` (descontando US$${money(openaiReserved)} de imágenes que se están generando)` : ""}. Sube el límite en Ajustes o desactiva el freno.`);
+  }
+}
+
+/** Comprueba el freno y aparta `estimate` mientras dura la generación. Devuelve la función que libera la reserva
+ *  (llamarla una sola vez, al terminar bien o mal; para entonces la fila de uso real ya cuenta). */
+export function reserveOpenAICredit(estimate: number): () => void {
+  checkOpenAICredit(estimate);
+  openaiReserved += estimate;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    openaiReserved = Math.max(0, openaiReserved - estimate);
+  };
+}
 
 // ---------- Gasto real del proveedor (Admin API) ----------
 type SpendData = { spent: number; refreshedAt: string | null; note: string };
@@ -137,9 +233,12 @@ export async function usageSummary({ force = false }: { force?: boolean } = {}):
   const month = db.usage.filter((u) => u.at.startsWith(mk));
   const local = month.filter((u) => (u.provider || "anthropic") === s.provider);
   const studioSpent = local.reduce((a, u) => a + u.cost, 0);
+  // Imágenes de apoyo: siempre a la clave de OpenAI. Con otro proveedor general no están en `local`, pero el desglose
+  // por sección y por modelo las muestra igual (spent/credit siguen siendo del proveedor general: los usa el freno de ask()).
+  const images = month.filter((u) => u.stage === "imagenes");
   const byStage: Record<string, number> = {};
   const byModel: Record<string, number> = {};
-  for (const u of local) {
+  for (const u of new Set([...local, ...images])) {
     byStage[u.stage] = (byStage[u.stage] || 0) + u.cost;
     byModel[u.model] = (byModel[u.model] || 0) + u.cost;
   }
@@ -169,6 +268,14 @@ export async function usageSummary({ force = false }: { force?: boolean } = {}):
     recent: db.usage.slice(-60).reverse(),
     keySet: hasKey(s.provider),
     anthropicKeySet: Boolean(s.apiKey || process.env.ANTHROPIC_API_KEY),
+    openaiKeySet: Boolean(keyOf("openai")),
+    imageUnitUsd: imageUnitUsd(s.imageModel, s.imageQuality),
+    imagesSpent: images.reduce((a, u) => a + (u.cost || 0), 0),
+    // las filas de cobro estimado (marcadas; las de antes de la marca: 0 tokens y 0 ms) no son imágenes hechas
+    imagesCalls: images.filter((u) => !isEstimatedImage(u)).length,
+    imagesEstimated: images.filter(isEstimatedImage).length,
+    openaiCredit: Number(s.credits?.openai ?? 0),
+    openaiSpent: month.filter((u) => u.provider === "openai").reduce((a, u) => a + (u.cost || 0), 0),
   };
 }
 

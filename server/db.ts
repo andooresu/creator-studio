@@ -70,6 +70,10 @@ export const DEFAULT_SETTINGS: Settings = {
   producerModel: "claude-opus-5-5",
   anthropicWorkspaceId: "",
   audioProvider: "sintetizado", // gratis y funciona en cualquier Mac; se cambia en Ajustes
+  // imágenes de apoyo: OpenAI con la clave de cada usuario; se generan solo al tocar «Generar»
+  imageProvider: "openai",
+  imageModel: "gpt-image-2",
+  imageQuality: "medium",
   localTtsEngine: "kokoro",
   localVoice: "em_alex",
   sayVoice: "Paulina",

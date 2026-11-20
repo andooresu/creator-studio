@@ -2,7 +2,7 @@
 
 ## Esencia
 - Persona a cámara (talking head) en 9:16 con **subtítulos karaoke**: trozos de 3–4 palabras y la palabra que se está diciendo en el color de acento (el de la marca; amarillo `#FFD43B` solo sin marca) con un pequeño salto.
-- La energía viene de la cámara y del montaje sobre la voz: **punch-ins** en los énfasis, cortes de tomas limpios, **b-roll** que entra sobre la imagen cuando la voz nombra algo mostrable.
+- La energía viene de la cámara y del montaje sobre la voz: **punch-ins** en los énfasis, cortes de tomas limpios, **b-roll** e **insertos ilustrativos** (motion graphics de lo que dice la voz o imágenes aprobadas) que entran sobre la imagen cuando la voz nombra algo mostrable.
 - Se ve nativo de redes, directo y rápido; nada de adornos de plantilla.
 - Para opinión, educación corta, consejos, anuncios guiados por la voz, 20–90 s.
 
@@ -26,6 +26,8 @@ Helpers en `helpers/talking.js` (`window.TALK`): cópialo a `film/talking.js` y 
 | **Punch duro (remate)** | Salto seco de escala en el remate o chiste | multiplica por `TALK.hardPunch(t, b0, b1, 1.18)` |
 | **Deriva viva** | Micro deriva sembrada en los holds | incluida en `TALK.punch` (`drift`) |
 | **B-roll sobre la imagen** | Tarjeta con imagen o clip crece sobre la persona (o cubre todo el cuadro) cuando la voz lo nombra y sale empujada hacia abajo | `TALK.broll(t, el, inBeat, outBeat, { full })`; SFX `whoosh` suave con pico al asentar |
+| **Inserto de motion graphics** | Palabras clave, una cifra que dice la voz, pasos, comparación o lista animados a pantalla completa (o en tarjeta arriba) | `INS.full(root, { kind, datos, inAt, outAt, modo })` de `lib/inserts.js` en build() + `ins.run(t)` en run(); datos solo de la voz (docs/apoyos.json) |
+| **Imagen aprobada con Ken Burns** | Ilustración aprobada por el usuario cubre el cuadro o una tarjeta con empuje lento | `INS.full(root, { kind: 'imagen', src: '../assets/apoyos/<id>.png', inAt, outAt, modo })` (respeta la forma de la imagen: una vertical va en tarjeta vertical o entera sobre su fondo desenfocado; no uses `C.photo`, que la recorta) |
 | **Título de gancho** | 2–5 palabras grandes suben palabra por palabra en los primeros 2 s | `TALK.hookTitle(t, L, [-0.4, 'w2', 'w3'], outAt)` con `TYPE.line(…, { accent: [i] })` |
 | **Subtítulos karaoke** | Trozo de 3–4 palabras; la palabra hablada en el acento con salto 10 % | `timeline.captions = { formats: ["9x16"], preset: "karaoke-amarillo", accent: "<acento de la marca>" }` (sin marca, omite `accent`); `words.py` + `sync.mjs` (lo dibuja `lib/captions.js`) |
 | **Palabra clave + emoji** | Palabras clave más grandes en acento; emoji que salta sobre el trozo | `captions.keywords: [...]`, `captions.emoji: { "dinero": "💰" }` (con moderación: ≤ 1 emoji cada 8–10 s) |
@@ -74,7 +76,7 @@ Resortes: `heavy` para cámara y títulos, `snappy` para tarjetas pequeñas y po
 ## Reglas recurrentes y prohibiciones
 - Frame 0 con la persona ya hablando y el título de gancho visible.
 - Sin silencios muertos: el ritmo no se pierde nunca.
-- B-roll solo si la voz lo nombra y el clip lo prueba (nada genérico de relleno); nunca IA para "resultados".
+- B-roll solo si la voz lo nombra y el clip lo prueba (nada genérico de relleno). Los insertos ilustrativos (motion graphics con `INS` e imágenes que el usuario aprobó en docs/apoyos.json) sí van: ilustran lo que dice la voz y sus textos y cifras salen solo de ella. Nunca IA para "resultados" (antes/después de clientes, métricas, testimonios, capturas que parecen reales), nunca caras de personas reales, nunca imágenes o datos inventados.
 - Prohibido: zoom continuo lento todo el video, transiciones de plantilla (giros, glitches, light leaks), emojis en cada frase, subtítulos centrados sobre la cara, fades.
 
 ## Qué revisa el crítico
@@ -82,14 +84,14 @@ Resortes: `heavy` para cámara y títulos, `snappy` para tarjetas pequeñas y po
 - Subtítulos legibles a 360 px y fuera de las zonas de UI; no tapan la boca ni los ojos.
 - Hay un cambio visual cada 2–4 s; los punch-ins varían de escala y caen en énfasis reales.
 - Ningún salto de toma visible sin cambio de escala; sin aire muerto entre frases.
-- El b-roll corresponde exactamente a lo que la voz dice en ese momento.
+- El b-roll y los insertos corresponden exactamente a lo que la voz dice en ese momento; cada apoyo aprobado y usable (`usable: true` en docs/apoyos.json) aparece en su tramo y sus textos/cifras son literales de la voz; los `usable: false` se saltan (no se rellenan con otro inserto).
 - Loudness en objetivo y la música nunca tapa la voz.
 
 ## Cómo usar la demo
 La demo (13,2 s, 100 BPM, 9:16 y 16:9) es un talking head de ejemplo con **una persona dibujada** como marcador («TU VIDEO A CÁMARA AQUÍ») que da «3 trucos para grabar mejor»: título de gancho en el frame 0, subtítulos karaoke-amarillo palabra por palabra, etiquetas «Truco 1/2/3», corte de toma con cambio de escala, punch-in en «ojos», b-roll en tarjeta («TU CLIP AQUÍ») sobre la persona, b-roll a pantalla completa, punch duro en «amigo» y «Síguenos», y la píldora final «Sigue a @tumarca». La voz es una VO de ejemplo escrita en `demo/index.html` (`window.VO`) para que los subtítulos se vean sin audio. En un proyecto creado con `init.sh`:
 
 1. Copia `demo/index.html` y `demo/film.js` a `film/` (sustituyen a los del motor) y `demo/timeline.json` a la raíz del proyecto.
-2. Copia `helpers/talking.js` a `film/talking.js` (el `<script src="talking.js">` ya va antes de `film.js` en `demo/index.html`). La tipografía es Montserrat ExtraBold, que `init.sh` ya deja en `assets/fonts/captions/`: no hay que copiar fuentes.
+2. Copia `helpers/talking.js` a `film/talking.js` (el `<script src="talking.js">` y el de `lib/inserts.js` ya van antes de `film.js` en `demo/index.html`). La tipografía es Montserrat ExtraBold, que `init.sh` ya deja en `assets/fonts/captions/`: no hay que copiar fuentes.
 3. Corre: `node scripts/sync.mjs && node scripts/lint.mjs --fmt 9x16 && node scripts/render.mjs --draft --fmt 9x16` (el borrador queda en `renders/draft_9x16.mp4`; `--sheet` da la hoja de contactos).
 
 Después pon tu material: tu clip a cámara en lugar de la silueta (`scripts/seq.py` → `C.drawSeq(g, frames, t, t0, box, { z, pos: [0.5, 0.4] })` con la misma `z` de punch-ins que usa la demo), tu voz (`scripts/vo.py` + `scripts/words.py`; con eso la VO de ejemplo se ignora sola), tus clips de b-roll en las tarjetas y tu @ en la píldora. Ajusta las marcas de `timeline.json` a las palabras reales de tu voz.
@@ -99,7 +101,7 @@ Después pon tu material: tu clip a cámara en lugar de la silueta (`scripts/seq
 2. **Acento:** pon el color de acento de tu marca en `timeline.captions.accent` y úsalo también en el acento del título de gancho (`TYPE.line(…, { accent: [i] })`), las palabras clave y la píldora del CTA. Conserva los roles: un solo acento, texto base blanco, contorno negro. Si no lee sobre tu imagen, ajusta el tono (más claro u oscuro) o el contorno antes que cambiar de color.
 3. **Tipografías:** si tu marca tiene una sans propia con peso 800 (o 700), cámbiala en el `@font-face` y en `C.fonts`, y pásala a los subtítulos; revisa que los trozos de 4 palabras sigan entrando en el ancho útil a 1080. Si no, quédate con Montserrat ExtraBold.
 4. **CTA y @:** cambia la píldora «Sigue a @tumarca» por el CTA de tu guía de marca (con su verbo y su @ o sitio).
-5. **Metraje:** reemplaza la silueta por tu clip a cámara (`seq.py` + `C.drawSeq` con la misma `z` de punch-ins) y las tarjetas «TU CLIP AQUÍ» por b-roll real que pruebe lo que dice la voz; si no tienes b-roll, quítalas y deja que trabajen los punch-ins.
+5. **Metraje:** reemplaza la silueta por tu clip a cámara (`seq.py` + `C.drawSeq` con la misma `z` de punch-ins) y las tarjetas «TU CLIP AQUÍ» por b-roll real que pruebe lo que dice la voz o por los apoyos aprobados (docs/apoyos.json → `INS.full`); si no tienes ni b-roll ni apoyos, quítalas y deja que trabajen los punch-ins.
 6. **Voz y tono:** los títulos de gancho, palabras clave y emojis siguen la voz de la marca (sus palabras a usar y a evitar); si la marca evita emojis, no los uses.
 
 ## Si buscas otra cosa

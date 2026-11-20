@@ -41,6 +41,9 @@ Al crear el video, en una sola pantalla, eliges la plantilla (ya viene una prese
 1. **Idea y guion**: tus links y el objetivo. Si hay links, se descargan, se extraen fotogramas y la IA analiza hook, estructura, retención y edición (el análisis queda en un panel al lado). La IA escribe el guion con tu voz (según tu guía de marca). Lo editas, pides cambios, eliges el hook y **apruebas**.
 2. **Grabación**: recomendaciones (plano, luz, audio, tomas, B-roll), checklist y teleprompter. Subes el video o lo eliges de tu carpeta de crudos.
 3. **Propuesta visual**: la IA ve tu grabación y propone subtítulos, paleta, zooms/B-roll, música y portada. Al **aprobar**, ves el costo estimado y el tope, y arranca la edición sola.
+   - **Apoyos visuales**: además propone imágenes y B-roll animado (palabras, cifra, pasos, comparación, lista) anclados a frases de tu guion, encima de ti o a pantalla completa. Cada uno se aprueba, edita, quita o reemplaza con tu propio archivo.
+   - Las imágenes se generan **solo cuando tocas «Generar»**, con tu clave de OpenAI (gpt-image), en estilo ilustración/gráfico: nunca fotos de resultados falsos. Ves el costo por imagen antes de generar.
+   - Las imágenes aprobadas aparecen también en el corte rápido; el B-roll animado lo arma el productor con la plantilla.
 4. **Edición**, un solo camino:
    - Elige las mejores tomas (whisper + IA), corta en silencios reales, reencuadra a 9:16 y deja el audio a -14 LUFS.
    - Luego el productor arma el video con la plantilla elegida, con tu marca ya aplicada (colores, acento de subtítulos y logo) y un brief prellenado, sin volver a preguntarte. La única aprobación es la del video final.
@@ -114,6 +117,7 @@ Lo que necesita un navegador o la red lo hace la app con herramientas controlada
 - **Gasto real**: con la *Admin key* del proveedor Andoo lee lo que te cobran este mes.
 - Ningún proveedor expone el saldo restante por API: "Queda" = crédito mensual que defines en Ajustes − gasto del mes.
 - Cada llamada se registra con tokens y costo estimado; hay freno automático al agotar el crédito.
+- **Imágenes de apoyo** (Ajustes): modelo y calidad de gpt-image, con tu clave de OpenAI aunque tu proveedor principal sea Claude. Tienen su propio límite mensual de OpenAI y aparecen aparte en «Uso de IA».
 
 ## Herramientas
 El instalador pone ffmpeg, yt-dlp y whisper.cpp (modelo en `~/.cache/whisper/ggml-small.bin`). En **Ajustes → Herramientas locales** ves qué está disponible; si algo falta, vuelve a abrir `Instalar.command`.

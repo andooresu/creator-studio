@@ -7,10 +7,11 @@ import path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options, Query, SDKMessage, SDKUserMessage, SDKResultMessage, CanUseTool, HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { load, save, id, getProject, projectDir, APP_DIR, DATA_DIR, MOTION_DIR, PROJECTS_DIR } from "../db.ts";
-import { scaffoldMotion, motionEnv, ensureLinks, copyStyle, isScaffolded } from "../motion/kit.ts";
+import { scaffoldMotion, motionEnv, ensureLinks, copyStyle, isScaffolded, repairEngineLibs } from "../motion/kit.ts";
+import { mapToCut } from "../editor.ts";
 import { createStudioServer, realPrefix } from "./tools.ts";
 import type { StudioContext, QuestionAnswers, ApprovalDecision } from "./tools.ts";
-import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP, parseStartFlags, flagsText, onlyFinalApproval } from "./prompt.ts";
+import { buildSystemPrompt, buildKickoff, resumeNote, modeOf, AGENT_TMP, parseStartFlags, flagsText, onlyFinalApproval, apoyoSkip } from "./prompt.ts";
 import { brandPresetFor } from "./brandPreset.ts";
 import type { BrandPreset } from "./brandPreset.ts";
 import { getStyle as findStyleById } from "../styles/store.ts";
@@ -18,7 +19,7 @@ import { costOf } from "../ai.ts";
 import { initProgress, sameStages, startStage, pauseClock, resumeClock, closeCurrent, refreshEta, recordSample, inferStage, stageLabel, MAX_QUESTION_ROUNDS } from "./progress.ts";
 const findStyle = (sid: string | null | undefined) => (sid ? findStyleById(sid) ?? null : null);
 import type { ProductionMode, StartFlags } from "./prompt.ts";
-import type { PendingAction, Production, ProductionBudget, ProductionEvent, ProductionStatus, ProgressStageKey, Project, RenderOutput, UsageRow } from "../../shared/types.ts";
+import type { Apoyo, PendingAction, Production, ProductionBudget, ProductionEvent, ProductionStatus, ProgressStageKey, Project, RenderOutput, UsageRow } from "../../shared/types.ts";
 
 // Campos internos extra que se guardan junto a Production (no forman parte del contrato de la interfaz).
 type ProdX = Production & {
@@ -101,6 +102,10 @@ interface Live {
   budgetHit: boolean;
   /** se interrumpió el turno por reintentos fallidos: el resultado deja la sesión en "error" sin el error genérico */
   retryHit: boolean;
+  /** hay un turno en curso (desde que entra un mensaje hasta su resultado): la carpeta del motor no se toca */
+  inTurn: boolean;
+  /** llegó un mensaje durante un turno y la carpeta no se preparó (se prepara al terminar el turno) */
+  prepPending: boolean;
 }
 
 const MAX_TOOL_STREAK = 3; // fallos seguidos de una misma herramienta
@@ -1089,9 +1094,22 @@ function handleMessage(pid: string, lv: Live, m: SDKMessage, dir: string): void 
     checkCap(pid, lv, true, queued > 0);
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
     const cur = prodOf(pid);
+    // sin otro turno en cola: recién ahora se prepara la carpeta que un mensaje de mitad de turno dejó pendiente; si
+    // algo cambió (apoyos, kit), la nota entra como turno nuevo para que el agente lo aplique. Con un aviso de tope
+    // pendiente o una herramienta esperando al usuario queda para el próximo mensaje (pushTurn/pushPrep la preparan)
+    if (queued === 0) {
+      lv.inTurn = false;
+      const p = getProject(pid);
+      const waits = Boolean(cur?.pending && lv.resolvers.has(cur.pending.data.id));
+      if (lv.prepPending && p?.production && cur?.pending?.type !== "budget" && !waits && !lv.input.closed && !lv.stopped) {
+        lv.prepPending = false;
+        const prep = prepareDir(p, (p.production as ProdX).dir);
+        if (prep) { noteEvent(pid, prep); lv.inTurn = true; lv.input.push(prep); setStatus(pid, "running"); }
+      }
+    }
     // sin una herramienta viva esperando (tope pendiente, pregunta de un turno interrumpido) el agente no espera nada:
     // la sesión se cierra por inactividad y se reanuda con la respuesta
-    if (!lv.input.closed && queued === 0 && (!cur?.pending || !lv.resolvers.has(cur.pending.data.id))) lv.idle = setTimeout(() => lv.input.close(), IDLE_CLOSE_MS);
+    if (!lv.input.closed && !lv.inTurn && (!cur?.pending || !lv.resolvers.has(cur.pending.data.id))) lv.idle = setTimeout(() => lv.input.close(), IDLE_CLOSE_MS);
   }
 }
 
@@ -1263,7 +1281,7 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
 
   const lv: Live = {
     abort: new AbortController(), q: null, input: new InputQueue(), resolvers: new Map(), idle: null, stderr: "", stopped: false, turnError: false,
-    msgCost: new Map(), toolNames: new Map(), toolBatch: new Map(), errStreak: new Map(), errBatch: new Map(), turnErrors: 0, budgetHit: false, retryHit: false,
+    msgCost: new Map(), toolNames: new Map(), toolBatch: new Map(), errStreak: new Map(), errBatch: new Map(), turnErrors: 0, budgetHit: false, retryHit: false, inTurn: true, prepPending: false,
     fresh: true,
   };
   live.set(pid, lv);
@@ -1409,8 +1427,57 @@ function launch(p: Project, prompt: string, resume?: string | null): void {
   })();
 }
 
+/**
+ * Preparación de la carpeta del motor cada vez que el agente va a leer algo nuevo (inicio, reanudación, mensaje, respuesta,
+ * aprobación, tope): enlaces del motor, copia del kit en film/lib (repairEngineLibs) y apoyos aprobados (syncApoyos →
+ * docs/apoyos.json y assets/apoyos/). El usuario puede aprobar, regenerar o quitar apoyos entre turnos. Devuelve la nota
+ * para el agente ("" si nada cambió).
+ */
+function prepareDir(p: Project, dir: string): string {
+  try { ensureLinks(dir); } catch {}
+  const libs = libsNote(repairEngineLibs(dir));
+  return [syncApoyos(p, dir), libs].filter(Boolean).join("\n\n");
+}
+
+/** Muestra en el chat la primera línea de una nota de la app para el agente. */
+function noteEvent(pid: string, note: string): void {
+  if (note) event(pid, { type: "status", text: note.split("\n")[0].replace(/: relee.*$/, ".") });
+}
+
+/** Texto para la sesión viva con la nota de preparación delante (prepareDir); la nota también se avisa en el chat. */
+function withPrep(p: Project, text: string): string {
+  const prep = prepareDir(p, (p.production as ProdX).dir);
+  noteEvent(p.id, prep);
+  return prep ? `${prep}\n\n${text}` : text;
+}
+
+/**
+ * Mensaje nuevo para la sesión viva. Durante un turno (el agente puede estar renderizando o corriendo lint) NO se toca la
+ * carpeta del motor: el mensaje entra ya (el CLI lo intercala entre rondas de herramientas) y la preparación (prepareDir:
+ * borrar o copiar apoyos, reponer el kit) queda pendiente para cuando termine el turno. Fuera de un turno se prepara la
+ * carpeta y la nota va delante del mensaje.
+ */
+function pushTurn(p: Project, lv: Live, text: string): void {
+  if (lv.inTurn) { lv.prepPending = true; lv.input.push(text); return; }
+  lv.inTurn = true;
+  lv.prepPending = false;
+  lv.input.push(withPrep(p, text));
+}
+
+/** Respuesta entregada a una herramienta que esperaba (pregunta/aprobación): si los apoyos o el kit cambiaron mientras
+ *  tanto, la nota entra como mensaje aparte en la cola de la sesión viva. */
+function pushPrep(p: Project, lv: Live): void {
+  // el agente está detenido en esa herramienta (no renderiza): se prepara antes de que le llegue la respuesta
+  lv.prepPending = false;
+  const prep = prepareDir(p, (p.production as ProdX).dir);
+  if (!prep) return;
+  noteEvent(p.id, prep);
+  lv.input.push(prep);
+}
+
 function resumeWith(p: Project, text: string): void {
   const prod = p.production as ProdX;
+  text = withPrep(p, text);
   // reanudar con un mensaje, una respuesta o al subir el tope: la barra existe y coincide con el modo
   // (producciones guardadas antes de la barra de progreso, o tras un cambio de modo)
   prepareProgress(prod, prod.mode || modeOf(p), false, false);
@@ -1436,6 +1503,122 @@ function syncStyle(p: Project, prod: ProdX, dir: string, restyle: boolean): stri
   return style
     ? `El usuario cambió el estilo a "${style.name}": relee docs/style/ y rehaz el diseño.`
     : "El usuario quitó el estilo del proyecto: ignora la guía anterior de docs/style/ y define el estilo con él.";
+}
+
+/** Una entrada de docs/apoyos.json (lo que lee el productor). Tiempos en segundos. */
+export interface ApoyoDoc {
+  id: string;
+  tipo: Apoyo["tipo"];
+  modo: Apoyo["modo"];
+  posicion: Apoyo["posicion"];
+  contenido: string;
+  animacion: Apoyo["animacion"];
+  datos: string[];
+  frase: string;
+  /** tramo en la grabación original */
+  original: { s: number; e: number };
+  /** tramo en el corte (edit/cut.mp4); null si no hay tramos del corte o si el corte lo quitó entero */
+  corte: { s: number; e: number } | null;
+  /** archivo dentro de la carpeta del motor (desde film/index.html: "../" + archivo); null si no tiene */
+  archivo: string | null;
+  /** false: aprobado pero no se puede insertar (sin archivo o sin datos para su animación): el productor lo salta */
+  usable: boolean;
+  /** por qué no es usable (solo cuando usable es false) */
+  motivo?: string;
+}
+
+const APOYO_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".m4v"]);
+const r2 = (x: number): number => Math.round(x * 100) / 100;
+
+/**
+ * Copia los archivos de los apoyos APROBADOS a <motion>/assets/apoyos/<id>.<ext> y escribe docs/apoyos.json con sus
+ * tiempos en la grabación original y en el corte (mapToCut con p.edit.ranges). Quita de assets/apoyos los archivos de
+ * apoyos que ya no están. Devuelve una nota para el agente si la lista cambió desde la última vez ("" si no). Nunca lanza.
+ */
+export function syncApoyos(p: Project, dir: string): string {
+  try {
+    const pdir = path.resolve(projectDir(p.id));
+    const docFile = path.join(dir, "docs", "apoyos.json");
+    const approved = (p.apoyos || []).filter((a) => a && a.aprobado).sort((a, b) => a.inicio_s - b.inicio_s);
+    const had = fs.existsSync(docFile);
+    if (!approved.length && !had) return "";
+    const outDir = path.join(dir, "assets", "apoyos");
+    fs.mkdirSync(outDir, { recursive: true });
+    const ranges = p.edit?.ranges?.length ? p.edit.ranges : null;
+    const realP = (() => { try { return fs.realpathSync(pdir); } catch { return pdir; } })();
+    const keep = new Set<string>();
+    const docs: ApoyoDoc[] = approved.map((a) => {
+      const safeId = String(a.id).replace(/[^\w-]/g, "_") || "apoyo";
+      let archivo: string | null = null;
+      if (a.archivo) {
+        try {
+          const src = path.resolve(pdir, a.archivo);
+          const real = fs.realpathSync(src);
+          const ext = path.extname(real).toLowerCase();
+          // solo archivos regulares de la carpeta del proyecto y de tipos conocidos
+          if (real.startsWith(realP + path.sep) && fs.statSync(real).isFile() && APOYO_EXT.has(ext)) {
+            const name = `${safeId}${ext === ".jpeg" ? ".jpg" : ext}`;
+            const dst = path.join(outDir, name);
+            const ss = fs.statSync(real);
+            let same = false;
+            try { const ds = fs.lstatSync(dst); same = ds.isFile() && ds.size === ss.size && ds.mtimeMs >= ss.mtimeMs; } catch {}
+            if (!same) {
+              fs.rmSync(dst, { force: true });
+              fs.copyFileSync(real, dst);
+            }
+            keep.add(name);
+            archivo = `assets/apoyos/${name}`;
+          }
+        } catch {}
+      }
+      const s = r2(a.inicio_s), e = r2(a.fin_s);
+      const m = ranges ? mapToCut(a.inicio_s, a.fin_s, ranges) : null;
+      const datos = Array.isArray(a.datos) ? a.datos.map(String) : [];
+      const motivo = apoyoSkip({ tipo: a.tipo, animacion: a.animacion, datos }, Boolean(archivo));
+      return {
+        id: a.id, tipo: a.tipo, modo: a.modo, posicion: a.posicion, contenido: a.contenido || "", animacion: a.animacion,
+        datos, frase: a.frase || "",
+        original: { s, e }, corte: m ? { s: r2(m.s), e: r2(m.e) } : null, archivo,
+        usable: !motivo, ...(motivo ? { motivo } : {}),
+      };
+    });
+    const before = had ? fs.readFileSync(docFile, "utf8") : null;
+    // solo se borra lo que la app escribió y ya no corresponde: los archivos que el docs/apoyos.json anterior listaba y el
+    // nombre de app (<id>.<ext>) de los apoyos del proyecto que ya no están aprobados. Un archivo que el productor guardó
+    // ahí (un recorte, <id>_card.png) no se toca: el film puede estar usándolo
+    const appNames = new Set<string>();
+    try {
+      const prev = before ? JSON.parse(before) : [];
+      if (Array.isArray(prev)) for (const d of prev) {
+        const m = typeof d?.archivo === "string" ? /^assets\/apoyos\/([^/\\]+)$/.exec(d.archivo) : null;
+        if (m) appNames.add(m[1]);
+      }
+    } catch {}
+    const ownIds = new Set((p.apoyos || []).map((a) => String(a?.id ?? "").replace(/[^\w-]/g, "_")));
+    const appFile = (f: string): boolean => {
+      if (appNames.has(f)) return true;
+      const ext = path.extname(f).toLowerCase();
+      return APOYO_EXT.has(ext) && ownIds.has(f.slice(0, -ext.length));
+    };
+    for (const f of fs.readdirSync(outDir)) if (!keep.has(f) && appFile(f)) fs.rmSync(path.join(outDir, f), { recursive: true, force: true });
+    const text = JSON.stringify(docs, null, 2) + "\n";
+    if (before === text) return "";
+    fs.mkdirSync(path.dirname(docFile), { recursive: true });
+    fs.writeFileSync(docFile, text);
+    if (!docs.length) return "El usuario quitó los apoyos visuales aprobados: docs/apoyos.json quedó vacío. Saca del film los insertos que venían de esos apoyos.";
+    const unusable = docs.filter((d) => !d.usable).length;
+    return `Los apoyos visuales aprobados cambiaron (${docs.length}): relee docs/apoyos.json y ajusta los insertos (son obligatorios en sus tiempos de corte; archivos en assets/apoyos/).${unusable ? ` ${unusable} no se pueden usar (usable: false, sin archivo o sin datos): sáltalos; no los inventes, generes ni rellenes.` : ""}`;
+  } catch (e) {
+    console.warn(`[productor ${p.id}] no se pudieron sincronizar los apoyos: ${(e as Error)?.message || e}`);
+    return "";
+  }
+}
+
+/** Aviso para el agente cuando repairEngineLibs repuso una copia de film/lib/inserts.js que había cambiado ("" si no). */
+function libsNote(done: string[]): string {
+  return done.some((d) => d.startsWith("film/lib/inserts.js") && d.includes("repuesta"))
+    ? "La app repuso film/lib/inserts.js con la versión del kit (es de solo lectura y se repone en cada inicio). Si la habías editado, esos cambios ya no están: pon tus ajustes en film.js y vuelve a correr lint.mjs antes de renderizar."
+    : "";
 }
 
 /** Etapas, reloj y rondas de preguntas al iniciar o reanudar: se reinician en una sesión nueva, al cambiar de modo o de estilo. */
@@ -1517,8 +1700,8 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     if (!existing || existing.status === "running" || (!budgetOnly && (existing.status === "waiting" || existing.pending))) throw new Error("La producción de este proyecto ya está en marcha.");
     guardCap(p, capUsd);
     // sesión viva e inactiva (turno terminado): el pedido entra por la cola de mensajes, sin lanzar otro proceso
-    try { ensureLinks(existing.dir); } catch {}
-    const note = syncStyle(p, existing, existing.dir, Boolean(opts.restyle));
+    const prep = prepareDir(p, existing.dir);
+    const note = [syncStyle(p, existing, existing.dir, Boolean(opts.restyle)), prep].filter(Boolean).join("\n\n");
     if (flags) existing.flags = flags;
     if (capUsd !== undefined) existing.capUsd = capUsd;
     prepareProgress(existing, existing.mode || modeOf(p), false, Boolean(opts.restyle));
@@ -1526,9 +1709,11 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     const text = [note, notice, flagsText(p, flags), brief].filter(Boolean).join("\n\n") || "Continúa la producción desde donde quedaste.";
     p.updatedAt = now;
     if (brief) event(p.id, { type: "user", text: brief });
-    if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
+    if (note) event(p.id, { type: "status", text: note.split("\n")[0].replace(/: relee.*$/, ".") });
     if (notice) event(p.id, { type: "status", text: notice.split("\n")[0] });
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
+    lv.inTurn = true; // sesión inactiva (sin turno): la carpeta ya se preparó arriba
+    lv.prepPending = false;
     lv.input.push(text);
     setStatus(p.id, "running");
     return;
@@ -1539,7 +1724,7 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
   // al reanudar se conserva el modo de la producción salvo que el cliente pida cambiarlo explícitamente (changeMode)
   const mode: ProductionMode = existing?.mode && existing.sessionId && !opts.changeMode ? existing.mode : opts.mode || existing?.mode || modeOf(p);
   const dir = reuse ? existing!.dir : scaffoldFresh(p, mode, flags ?? existing?.flags);
-  try { ensureLinks(dir); } catch {}
+  const prep = prepareDir(p, dir);
   let prod: ProdX;
   let note = "";
   const fresh = !existing;
@@ -1549,6 +1734,7 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
     refundQuestion(prod); // si quedaba una pregunta de una sesión anterior, el agente la volverá a hacer (sin gastar otra ronda)
     prod.pending = null;
     note = reuse ? syncStyle(p, prod, dir, Boolean(opts.restyle)) : ((prod.styleId = p.styleId || null), "");
+    if (prod.sessionId) note = [note, prep].filter(Boolean).join("\n\n");
   } else {
     prod = { dir, status: "running", sessionId: null, pending: null, events: [], renders: [], costUsd: 0, startedAt: now, styleId: p.styleId || null };
     p.production = prod;
@@ -1560,7 +1746,7 @@ export function startProduction(p: Project, opts: { mode?: "reel" | "clase" | "t
   prepareProgress(prod, mode, fresh, !prod.sessionId || modeChanged || Boolean(opts.changeMode) || Boolean(opts.restyle));
   p.updatedAt = now;
   if (brief) event(p.id, { type: "user", text: brief });
-  if (note) event(p.id, { type: "status", text: note.replace(/: relee.*$/, ".") });
+  if (note) event(p.id, { type: "status", text: note.split("\n")[0].replace(/: relee.*$/, ".") });
   if (notice && prod.sessionId) event(p.id, { type: "status", text: notice.split("\n")[0] });
   event(p.id, { type: "status", text: prod.sessionId ? "Reanudando la producción…" : "Iniciando la producción…" }, true);
   const extra = [note, notice, flagsText(p, flags), brief].filter(Boolean).join("\n\n");
@@ -1590,7 +1776,7 @@ export function sendMessage(p: Project, text: string, /** aviso de la app para e
   if (lv) {
     resetRetries(lv); // el usuario escribió: los reintentos vuelven a empezar
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
-    lv.input.push(forAgent);
+    pushTurn(p, lv, forAgent);
     if (!toolWaiting) setStatus(p.id, "running");
   } else resumeWith(p, forAgent);
 }
@@ -1612,9 +1798,9 @@ export function answerQuestion(p: Project, questionId: string, answers: Record<s
   prod.status = "running";
   event(p.id, { type: "answer", text: lines.join("\n"), data: clean }, true);
   if (lv?.idle) { clearTimeout(lv.idle); lv.idle = null; }
-  if (r && lv) { lv.resolvers.delete(questionId); r.resolve(clean); return; }
+  if (r && lv) { lv.resolvers.delete(questionId); r.resolve(clean); pushPrep(p, lv); return; }
   const text = `Respuestas a tus preguntas:\n${lines.map((l) => `- ${l}`).join("\n")}`;
-  if (lv) { resetRetries(lv); lv.input.push(text); } // entra como turno nuevo: los reintentos vuelven a empezar
+  if (lv) { resetRetries(lv); pushTurn(p, lv, text); } // entra como turno nuevo: los reintentos vuelven a empezar
   else resumeWith(p, text);
 }
 
@@ -1634,11 +1820,11 @@ export function decideApproval(p: Project, approvalId: string, approved: boolean
   const decision: ApprovalDecision = { approved: Boolean(approved), ...(fb ? { feedback: fb } : {}) };
   event(p.id, { type: "decision", text: `${approved ? "Aprobado" : "Cambios pedidos"}: ${pend.data.title}${fb ? ` — ${fb}` : ""}`, data: { approvalId, kind: pend.data.kind, ...decision } }, true);
   if (lv?.idle) { clearTimeout(lv.idle); lv.idle = null; }
-  if (r && lv) { lv.resolvers.delete(approvalId); r.resolve(decision); return; }
+  if (r && lv) { lv.resolvers.delete(approvalId); r.resolve(decision); pushPrep(p, lv); return; }
   const text = approved
     ? `El usuario APROBÓ "${pend.data.title}" (${pend.data.kind}).${fb ? ` Comentario: ${fb}` : ""} Continúa.`
     : `El usuario NO aprobó "${pend.data.title}" (${pend.data.kind}). Cambios pedidos: ${fb}. Aplícalos y vuelve a pedir aprobación.`;
-  if (lv) { resetRetries(lv); lv.input.push(text); } // entra como turno nuevo: los reintentos vuelven a empezar
+  if (lv) { resetRetries(lv); pushTurn(p, lv, text); } // entra como turno nuevo: los reintentos vuelven a empezar
   else resumeWith(p, text);
 }
 
@@ -1668,7 +1854,7 @@ export function resolveBudget(p: Project, budgetId: string, opts: { raiseTo?: nu
   if (lv) {
     resetRetries(lv);
     if (lv.idle) { clearTimeout(lv.idle); lv.idle = null; }
-    lv.input.push(text);
+    pushTurn(p, lv, text);
   } else resumeWith(p, text);
 }
 
