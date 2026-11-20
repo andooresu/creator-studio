@@ -73,7 +73,7 @@ Replace the starter scenes in `film/film.js`. One `C.scene()` per shot; marks an
 - `C.pick` for per-format layout
 - `Motion.indicator` / `track` for multi-target motion
 
-Real media: `C.photo(parent, src, box, pos)` for stills; footage via `.venv/bin/python scripts/seq.py <name> <video> <start> <dur>` (pick windows with `seq.py --strip <video>`) and `C.seq` / `C.drawSeq` on a canvas (engine/lib/media.js). Captions come from `timeline.captions` + the placed VO automatically (engine/lib/captions.js): `style` pill · karaoke · pop · box · word, plus font, accent, keywords, emoji, y/yFmt/yAt — options in the file header. Word styles need `scripts/words.py` (AUDIO.md §3 step 6). Named looks: `captions.preset` (house defaults `pill-sobrio` and `karaoke-amarillo`); catalog, lab (`scripts/caption_lab.sh`) and **how to learn a new caption format from a reference**: [reference/CAPTIONS.md](reference/CAPTIONS.md).
+Real media: `C.photo(parent, src, box, pos)` for stills; footage via `.venv/bin/python scripts/seq.py <name> <video> <start> <dur>` (pick windows with `seq.py --strip <video>`) and `C.seq` / `C.drawSeq` on a canvas (engine/lib/media.js). Captions come from `timeline.captions` + the placed VO automatically (engine/lib/captions.js): `style` pill · karaoke · pop · box · word, plus font, accent, keywords, emoji, y/yFmt/yAt — options in the file header. Word styles need `scripts/words.py` (AUDIO.md §3 step 6). Named looks: `captions.preset` (house defaults `pill-sobrio` and `karaoke`); catalog, lab (`scripts/caption_lab.sh`) and **how to learn a new caption format from a reference**: [reference/CAPTIONS.md](reference/CAPTIONS.md).
 
 Declare every SFX in `timeline.sfx` as you build it. After each edit, check with:
 ```

@@ -13,9 +13,31 @@ if (TL.captions && TL.captions.preset) {
   const file = 'film/lib/caption_presets.json';
   if (!fs.existsSync(file)) throw new Error(`captions.preset "${TL.captions.preset}" but no ${file} — copy <skill>/captions/presets.json there`);
   const P = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const base = P[TL.captions.preset];
-  if (!base) throw new Error(`unknown caption preset "${TL.captions.preset}" (have: ${Object.keys(P).filter((k) => !k.startsWith('_')).join(', ')})`);
-  const { _meta, ...look } = base;
+  // { alias: "<name>" } entries are old names of another look; an OLD copy of the file may still hold the look under
+  // its old name only (karaoke-amarillo with no karaoke), so a new name falls back to the old one it replaced
+  const RENAMED = { karaoke: 'karaoke-amarillo' };
+  const isLook = (v) => v && typeof v === 'object' && !v.alias;
+  const resolve = (name) => {
+    const seen = [];
+    let n = name;
+    for (let hop = 0; hop < 5; hop++) {
+      if (seen.includes(n)) throw new Error(`caption preset alias loop: ${[...seen, n].join(' → ')}`);
+      seen.push(n);
+      const v = P[n];
+      if (isLook(v)) return v;
+      if (v && typeof v.alias === 'string') { n = v.alias; continue; }
+      if (!v && RENAMED[n] && !seen.includes(RENAMED[n])) { n = RENAMED[n]; continue; }
+      return null;
+    }
+    throw new Error(`caption preset "${name}": too many alias hops (${seen.join(' → ')})`);
+  };
+  const base = resolve(TL.captions.preset);
+  if (!base) {
+    const looks = Object.keys(P).filter((k) => !k.startsWith('_') && isLook(P[k]));
+    const aliases = Object.keys(P).filter((k) => !k.startsWith('_') && P[k] && typeof P[k].alias === 'string').map((k) => `${k} → ${P[k].alias}`);
+    throw new Error(`unknown caption preset "${TL.captions.preset}" (have: ${looks.join(', ')}${aliases.length ? `; old names: ${aliases.join(', ')}` : ''})`);
+  }
+  const { _meta, alias: _alias, ...look } = base;
   TL.captions = { ...look, ...TL.captions };
   if (look.fontFile && !fs.existsSync(`assets/fonts/captions/${look.fontFile}`))
     console.warn(`WARNING: caption font assets/fonts/captions/${look.fontFile} missing — copy it from <skill>/captions/fonts/`);

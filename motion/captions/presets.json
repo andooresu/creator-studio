@@ -1,15 +1,20 @@
 {
-  "_note": "Named caption looks. A project picks one with timeline.captions.preset; its own keys override the preset (accent = brand colour, y, keywords, emoji…). init.sh copies this file to film/lib/caption_presets.json; sync.mjs merges it. Add every format learned from a reference here (reference/CAPTIONS.md) and log it in the catalog. _meta is documentation only.",
+  "_note": "Named caption looks. A project picks one with timeline.captions.preset; its own keys override the preset (accent = brand colour, y, keywords, emoji…). init.sh copies this file to film/lib/caption_presets.json; sync.mjs merges it. Add every format learned from a reference here (reference/CAPTIONS.md) and log it in the catalog. _meta is documentation only. An entry { alias: <name> } is an old name that points to another look (sync.mjs follows it).",
 
   "pill-sobrio": {
     "style": "pill", "y": 0.72, "maxChars": 34,
     "_meta": { "house": true, "useFor": "premium, medical, B2B (clínicas, marcas médicas): quiet, never competes with the film's own type", "learnedFrom": "motion-reel v2 default", "added": "2026-10-11" }
   },
 
-  "karaoke-amarillo": {
+  "karaoke": {
     "style": "karaoke", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "accent": "#FFD43B", "strokeColor": "#000",
     "maxWords": 4, "maxChars": 22, "bump": 0.1, "y": 0.70,
-    "_meta": { "house": true, "useFor": "talking heads, education, VO-led social ads (talking heads propios)", "learnedFrom": "talking-head word captions (Montserrat ExtraBold, keywords #FFD43B, black outline) + AutoCaptions-type packs", "added": "2026-11-09" }
+    "_meta": { "house": true, "useFor": "talking heads, education, VO-led social ads: spoken word in the accent (set accent = brand colour; the yellow is only the no-brand default)", "learnedFrom": "talking-head word captions (Montserrat ExtraBold, accent keywords, black outline) + AutoCaptions-type packs", "added": "2026-11-09", "renamed": "2026-11-20 (was karaoke-amarillo)" }
+  },
+
+  "karaoke-amarillo": {
+    "alias": "karaoke",
+    "_meta": { "alias": true, "useFor": "old name of karaoke (kept so older timelines and styles keep working)", "added": "2026-11-20" }
   },
 
   "pop-energia": {
@@ -18,8 +23,8 @@
   },
 
   "box-marca": {
-    "style": "box", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "boxText": "#111",
-    "_meta": { "useFor": "brand-coloured highlight: set accent/boxColor to the brand accent when it is light enough for dark text", "learnedFrom": "highlight-box caption packs", "added": "2026-11-09" }
+    "style": "box", "fontFile": "Montserrat-ExtraBold.ttf", "weight": 800, "boxText": "auto",
+    "_meta": { "useFor": "brand-coloured highlight: set accent/boxColor to the brand accent; boxText auto picks #111 or #fff by contrast", "learnedFrom": "highlight-box caption packs", "added": "2026-11-09" }
   },
 
   "palabra-hook": {

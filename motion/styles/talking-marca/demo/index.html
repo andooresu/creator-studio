@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>motion reel</title>
+<style>
+  /* Estilo "Talking marca": UNA familia, Montserrat ExtraBold 800 (la misma de los subtítulos del preset box-marca).
+     init.sh ya la deja en assets/fonts/captions/. Para la fuente de tu marca, cambia esta @font-face y --display. */
+  @font-face { font-family: 'Montserrat'; src: url(../assets/fonts/captions/Montserrat-ExtraBold.ttf); font-weight: 800; }
+  :root {
+    /* tokens del estilo: la imagen de la persona manda; TODO lo de marca lee --accent (caja del gancho, barra, etiquetas,
+       marco del b-roll, CTA). --on-accent (texto sobre el acento) lo calcula MARCA.ink(): #111 o #fff según el contraste.
+       El violeta es el acento de plantilla: se usa solo cuando el proyecto no tiene marca. */
+    --bg: #14161C; --ink: #111111; --accent: #5B3DF5; --card: #FFFFFF;
+    --white: #FFFFFF; --on-accent: #FFFFFF; --shade: rgba(0,0,0,.58);
+    --display: 'Montserrat', 'Arial Black', Arial, sans-serif;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--bg); transform-origin: 0 0;
+           font-family: var(--display); font-weight: 800; color: var(--white);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  /* título de gancho: mayúsculas, contorno negro como los subtítulos; la fila de marca va sobre la caja de acento */
+  .display { font-family: var(--display); font-weight: 800; letter-spacing: -0.02em; line-height: 1; white-space: nowrap;
+             text-transform: uppercase; -webkit-text-stroke: 0.07em #000; paint-order: stroke fill; text-shadow: 0 6px 24px rgba(0,0,0,.45); }
+  .display.on-box { color: var(--on-accent); -webkit-text-stroke: 0; text-shadow: none; }
+  .line { position: absolute; overflow: hidden; padding: 0.12em 0.08em 0.2em; margin: -0.12em -0.08em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  .hookbox { position: absolute; background: var(--accent); border-radius: 0.14em; box-shadow: 0 18px 50px -18px rgba(0,0,0,.6); }
+  /* espacio del logo + @ (cámbialo por <img src="../assets/brand/logo.png"> cuando la marca tenga logo) */
+  .brand { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 0.45em; white-space: nowrap; transform-origin: 0 50%; }
+  .brand .slot { width: 2.1em; height: 2.1em; border-radius: 0.5em; background: var(--accent); color: var(--on-accent);
+                 display: flex; align-items: center; justify-content: center; font-size: 1em; letter-spacing: 0.02em;
+                 box-shadow: 0 10px 30px -10px rgba(0,0,0,.6); }
+  .brand .slot i { font-style: normal; font-size: 0.5em; opacity: .92; }
+  .brand .handle { color: var(--white); text-shadow: 0 3px 14px rgba(0,0,0,.55); letter-spacing: 0.01em; }
+  /* etiqueta de paso: píldora en el acento, texto en --on-accent */
+  .chip { position: absolute; left: 0; top: 0; transform-origin: 0 50%; white-space: nowrap; line-height: 1;
+          padding: 0.42em 0.8em 0.46em; border-radius: 999px; background: var(--accent); color: var(--on-accent);
+          letter-spacing: 0.02em; text-transform: uppercase; box-shadow: 0 10px 30px -8px rgba(0,0,0,.5); }
+  .chip b { display: inline-block; min-width: 1.25em; text-align: center; padding: 0.14em 0.1em 0.12em; margin: -0.14em 0.42em -0.14em -0.4em;
+            border-radius: 999px; background: rgba(0,0,0,.22); }
+  /* tarjeta de b-roll con marco de marca: esquina 28 px, borde de acento, sombra profunda, nunca glow */
+  .broll { position: absolute; left: 0; top: 0; overflow: hidden; border-radius: 28px; transform-origin: 50% 50%;
+           box-shadow: 0 0 0 8px var(--accent), 0 40px 90px -24px rgba(0,0,0,.7); }
+  .ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5em;
+        color: rgba(255,255,255,.92); text-transform: uppercase; letter-spacing: 0.03em; text-align: center; }
+  .ph .play { width: 1.9em; height: 1.9em; border-radius: 50%; background: rgba(0,0,0,.35); position: relative; }
+  .ph .play::after { content: ''; position: absolute; left: 0.75em; top: 0.55em; border-style: solid; border-width: 0.4em 0 0.4em 0.62em;
+                     border-color: transparent transparent transparent #fff; }
+  .ph small { font-size: 0.62em; opacity: .8; letter-spacing: 0.06em; }
+  .tag { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; padding: 0.45em 0.8em; border-radius: 999px;
+         background: var(--shade); color: rgba(255,255,255,.9); letter-spacing: 0.05em; text-transform: uppercase; transform-origin: 50% 50%; }
+  /* CTA: píldora en el acento con el @ en una pastilla blanca */
+  .cta { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; padding: 0.5em 0.6em 0.55em 0.95em; border-radius: 999px;
+         background: var(--accent); color: var(--on-accent); transform-origin: 50% 50%; box-shadow: 0 16px 50px -12px rgba(0,0,0,.6);
+         text-transform: uppercase; letter-spacing: 0.01em; }
+  .cta b { color: #111111; background: #FFFFFF; border-radius: 999px; padding: 0.22em 0.55em 0.26em; margin-left: 0.4em; text-transform: none; }
+  .bar { position: absolute; left: 0; top: 0; height: 8px; background: var(--accent); }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script>
+  // VO DE EJEMPLO (solo para la demo): frases y palabras con tiempos en segundos sobre la rejilla de 100 BPM.
+  // Con tu voz real (scripts/vo.py + scripts/words.py → sync.mjs) window.VO ya viene lleno y esto no se usa.
+  if (!window.VO || !window.VO.length) {
+    const P = (id, t0, t1, text, ws) => ({ id, t0, t1, text, words: ws.map(([w, a, b]) => ({ w, t0: a, t1: b })) });
+    window.VO = [
+      P('p1', 0.05, 2.3, 'Presenta tu negocio en una sola frase.', [['Presenta', 0.05, 0.55], ['tu', 0.55, 0.68], ['negocio', 0.68, 1.15], ['en', 1.2, 1.3], ['una', 1.3, 1.5], ['sola', 1.5, 1.85], ['frase.', 1.85, 2.3]]),
+      P('p2', 2.5, 4.9, 'Primero, di qué haces sin rodeos.', [['Primero,', 2.5, 2.95], ['di', 3.05, 3.2], ['qué', 3.2, 3.4], ['haces', 3.4, 3.85], ['sin', 3.95, 4.15], ['rodeos.', 4.15, 4.9]]),
+      P('p3', 5.3, 7.4, 'Luego, a quién ayudas.', [['Luego,', 5.3, 5.75], ['a', 5.85, 5.95], ['quién', 5.95, 6.4], ['ayudas.', 6.5, 7.4]]),
+      P('p4', 7.85, 10.0, 'Y cierra con lo que te hace distinto.', [['Y', 7.85, 7.95], ['cierra', 7.95, 8.35], ['con', 8.35, 8.5], ['lo', 8.5, 8.6], ['que', 8.6, 8.72], ['te', 8.72, 8.85], ['hace', 8.85, 9.2], ['distinto.', 9.25, 10.0]]),
+      P('p5', 10.35, 12.1, 'Escríbenos y te ayudamos.', [['Escríbenos', 10.35, 11.0], ['y', 11.05, 11.15], ['te', 11.15, 11.3], ['ayudamos.', 11.3, 12.1]]),
+    ];
+  }
+</script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="marca.js"></script>
+<script src="lib/inserts.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

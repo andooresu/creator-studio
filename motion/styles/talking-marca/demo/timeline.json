@@ -1,0 +1,67 @@
+{
+  "note": "Demo del estilo Talking marca: 13,2 s a 100 BPM (22 beats), todo en beats. La persona es un marcador dibujado y la voz una VO de ejemplo escrita en demo/index.html (window.VO): al poner tu clip y tu voz real (vo.py + words.py) esa VO de ejemplo se ignora sola. captions.accent es el mismo color que --accent de film/index.html (el de tu marca). Copia este archivo a la raíz del proyecto y corre node scripts/sync.mjs.",
+  "title": "Demo — Talking marca",
+  "duration": 13.2,
+  "fps": 60,
+  "bpm": 100,
+  "formats": ["9x16", "16x9"],
+  "music": {
+    "source": "synth",
+    "chords": ["Dm", "Bb", "F", "C"],
+    "sections": [
+      { "at": "hook", "kind": "intro" },
+      { "at": "s1", "kind": "full" },
+      { "at": "s3", "kind": "build" },
+      { "at": 16.6, "kind": "gap" },
+      { "at": "cta", "kind": "drop" }
+    ],
+    "accents": ["s2_card", "cta_pill"]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0,
+    "hook_w2": 0.75,
+    "hook_out": 3.3,
+    "s1": 4,
+    "s1_chip": 4.2,
+    "s1_punch": 5.6,
+    "s1_back": 7.6,
+    "s2": 8.75,
+    "s2_chip": 9,
+    "s2_card": 10,
+    "s2_out": 12.3,
+    "s3": 13,
+    "s3_chip": 13.2,
+    "s3_hard": 15.4,
+    "s3_hard_out": 16.8,
+    "cta": 17,
+    "cta_pill": 17.3,
+    "logo_pulse": 18.6,
+    "pulse": 20,
+    "done": 22
+  },
+  "sfx": [
+    { "at": "hook", "type": "pop", "gain": 0.7, "what": "gancho y logo visibles en el frame 0" },
+    { "at": "hook_w2", "type": "whoosh", "gain": 0.45, "what": "caja de marca se barre bajo la fila 2 del gancho" },
+    { "at": "s1_chip", "type": "pop", "gain": 0.45, "what": "etiqueta PASO 1" },
+    { "at": "s1_punch", "type": "pop", "gain": 0.35, "what": "punch-in en «haces»" },
+    { "at": "s2_chip", "type": "pop", "gain": 0.45, "what": "etiqueta PASO 2" },
+    { "at": "s2_card", "type": "whoosh", "gain": 0.5, "what": "tarjeta de b-roll con marco de marca entra sobre la persona" },
+    { "at": "s3_chip", "type": "pop", "gain": 0.45, "what": "etiqueta PASO 3" },
+    { "at": "s3_hard", "type": "thump", "gain": 0.8, "what": "punch duro en «distinto»" },
+    { "at": "cta_pill", "type": "pop", "gain": 0.6, "what": "píldora CTA en el acento" },
+    { "at": "logo_pulse", "type": "pop", "gain": 0.35, "what": "pulso del logo" },
+    { "at": "pulse", "type": "pop", "gain": 0.35, "what": "pulso de la píldora" }
+  ],
+  "captions": {
+    "formats": ["9x16", "16x9"],
+    "preset": "box-marca",
+    "accent": "#5B3DF5",
+    "autoKeywords": false,
+    "skip": ["Presenta tu negocio en una sola frase."]
+  },
+  "lint": {
+    "minText": {},
+    "ignore": []
+  }
+}

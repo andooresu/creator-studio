@@ -23,7 +23,8 @@
 //              'Display, UI, Arial'
 //   weight 800 · size (px; default by style and format) · upper true (word styles) · color '#fff'
 //   accent     spoken word / keyword colour, default '#FFD43B'. Use the brand accent when it reads on footage
-//   boxText    word colour inside the box (box style), default '#111'
+//   boxText    word colour inside the box (box style), default '#111'; 'auto' → #111 or #fff, whichever contrasts
+//              more with the box colour (WCAG relative luminance; unparseable colours → #111)
 //   stroke     outline px (default size × 0.09 for word styles) · strokeColor '#000'
 //   shadow     CSS text-shadow, default '0 4px 18px rgba(0,0,0,.45)'
 //   maxWords / maxChars   chunk size (karaoke 4/22, pop 3/18, box 3/18, word 1; pill uses maxChars 34)
@@ -40,11 +41,21 @@
 //   bg         background behind the whole chunk, e.g. 'rgba(0,0,0,.7)' or '#fff' · bgRadius · bgPadX · bgPadY (× size)
 //   fontFile   'Montserrat-ExtraBold.ttf' from assets/fonts/captions/ (copied by init.sh from <skill>/captions/fonts)
 //   tilt       degrees, alternating ± per chunk · lineHeight 1.12 · letterSpacing '-.01em' · wordGap 0.13 (× size)
-// PRESETS: "captions": { "preset": "karaoke-amarillo", ...overrides } — named looks in film/lib/caption_presets.json
+// PRESETS: "captions": { "preset": "karaoke", ...overrides } — named looks in film/lib/caption_presets.json
 //   (sync.mjs merges preset + overrides into window.TL). Catalog and how to learn new ones: reference/CAPTIONS.md.
 // Long phrases are split into chunks; chunks never end on a function word and never straddle a hard cut.
 // Run lint.mjs: captions must not overlap the film's own type (OVERLAP) — move the type or use yAt.
 (() => {
+  // boxText 'auto': #111 or #fff by WCAG contrast against a #rgb / #rrggbb colour; anything else → #111
+  const inkOn = (col) => {
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(col || '').trim());
+    if (!m) return '#111';
+    const h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
+    const lin = (i) => { const c = parseInt(h.slice(i, i + 2), 16) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const L = 0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4);
+    const dark = ((0x11 / 255 + 0.055) / 1.055) ** 2.4; // luminance of #111 (all channels equal)
+    return (L + 0.05) / (dark + 0.05) >= 1.05 / (L + 0.05) ? '#111' : '#fff';
+  };
   const C = window.C, TL = window.TL || {}, CFG = TL.captions;
   if (!CFG || !(CFG.formats || []).includes(C.FMT)) return;
   const { step } = window.Motion;
@@ -116,6 +127,7 @@
   O.stroke = CFG.stroke ?? Math.round(O.size * 0.09);
   O.pastColor = CFG.pastColor || O.color;
   O.boxColor = CFG.boxColor || O.accent;
+  if (O.boxText === 'auto') O.boxText = inkOn(O.boxColor);
   // fontFile: a TTF/OTF in assets/fonts/captions/ (init.sh copies the skill's caption fonts there) → its own face
   if (O.fontFile) {
     const fam = 'Cap_' + O.fontFile.replace(/\.[a-z0-9]+$/i, '').replace(/[^A-Za-z0-9]/g, '');

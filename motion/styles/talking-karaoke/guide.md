@@ -29,7 +29,7 @@ Helpers en `helpers/talking.js` (`window.TALK`): cópialo a `film/talking.js` y 
 | **Inserto de motion graphics** | Palabras clave, una cifra que dice la voz, pasos, comparación o lista animados a pantalla completa (o en tarjeta arriba) | `INS.full(root, { kind, datos, inAt, outAt, modo })` de `lib/inserts.js` en build() + `ins.run(t)` en run(); datos solo de la voz (docs/apoyos.json) |
 | **Imagen aprobada con Ken Burns** | Ilustración aprobada por el usuario cubre el cuadro o una tarjeta con empuje lento | `INS.full(root, { kind: 'imagen', src: '../assets/apoyos/<id>.png', inAt, outAt, modo })` (respeta la forma de la imagen: una vertical va en tarjeta vertical o entera sobre su fondo desenfocado; no uses `C.photo`, que la recorta) |
 | **Título de gancho** | 2–5 palabras grandes suben palabra por palabra en los primeros 2 s | `TALK.hookTitle(t, L, [-0.4, 'w2', 'w3'], outAt)` con `TYPE.line(…, { accent: [i] })` |
-| **Subtítulos karaoke** | Trozo de 3–4 palabras; la palabra hablada en el acento con salto 10 % | `timeline.captions = { formats: ["9x16"], preset: "karaoke-amarillo", accent: "<acento de la marca>" }` (sin marca, omite `accent`); `words.py` + `sync.mjs` (lo dibuja `lib/captions.js`) |
+| **Subtítulos karaoke** | Trozo de 3–4 palabras; la palabra hablada en el acento con salto 10 % | `timeline.captions = { formats: ["9x16"], preset: "karaoke", accent: "<acento de la marca>" }` (sin marca, omite `accent`); `words.py` + `sync.mjs` (lo dibuja `lib/captions.js`) |
 | **Palabra clave + emoji** | Palabras clave más grandes en acento; emoji que salta sobre el trozo | `captions.keywords: [...]`, `captions.emoji: { "dinero": "💰" }` (con moderación: ≤ 1 emoji cada 8–10 s) |
 | **Barra de progreso (opcional)** | Barra fina arriba que avanza con el video | `TALK.progress(t, bar)` sobre un elemento de 6–8 px pegado al borde superior |
 
@@ -48,7 +48,7 @@ Resortes: `heavy` para cámara y títulos, `snappy` para tarjetas pequeñas y po
 - Tarjetas de b-roll con esquina 24–32 px y sombra profunda suave; nunca glow.
 
 ## Subtítulos
-- Preset `karaoke-amarillo` (maxWords 4, maxChars 22, bump 0,1, y 0,70); el nombre es de la plantilla, el color lo pone el proyecto. Ajustes del proyecto: `accent` (siempre el acento de la marca cuando hay marca, ajustado de tono si hace falta para que lea; sin marca se queda el amarillo del preset), `keywords`, `emoji`, `yAt` para subirlos cuando haya b-roll o un título en esa zona.
+- Preset `karaoke` (maxWords 4, maxChars 22, bump 0,1, y 0,70); el nombre es de la plantilla, el color lo pone el proyecto. Ajustes del proyecto: `accent` (siempre el acento de la marca cuando hay marca, ajustado de tono si hace falta para que lea; sin marca se queda el amarillo del preset), `keywords`, `emoji`, `yAt` para subirlos cuando haya b-roll o un título en esa zona.
 - Siempre quemados en 9:16 (autoplay sin sonido). Nunca subtitular dos veces lo que ya aparece como título (`skip`).
 
 ## Transiciones
@@ -88,7 +88,7 @@ Resortes: `heavy` para cámara y títulos, `snappy` para tarjetas pequeñas y po
 - Loudness en objetivo y la música nunca tapa la voz.
 
 ## Cómo usar la demo
-La demo (13,2 s, 100 BPM, 9:16 y 16:9) es un talking head de ejemplo con **una persona dibujada** como marcador («TU VIDEO A CÁMARA AQUÍ») que da «3 trucos para grabar mejor»: título de gancho en el frame 0, subtítulos karaoke-amarillo palabra por palabra, etiquetas «Truco 1/2/3», corte de toma con cambio de escala, punch-in en «ojos», b-roll en tarjeta («TU CLIP AQUÍ») sobre la persona, b-roll a pantalla completa, punch duro en «amigo» y «Síguenos», y la píldora final «Sigue a @tumarca». La voz es una VO de ejemplo escrita en `demo/index.html` (`window.VO`) para que los subtítulos se vean sin audio. En un proyecto creado con `init.sh`:
+La demo (13,2 s, 100 BPM, 9:16 y 16:9) es un talking head de ejemplo con **una persona dibujada** como marcador («TU VIDEO A CÁMARA AQUÍ») que da «3 trucos para grabar mejor»: título de gancho en el frame 0, subtítulos del preset karaoke palabra por palabra, etiquetas «Truco 1/2/3», corte de toma con cambio de escala, punch-in en «ojos», b-roll en tarjeta («TU CLIP AQUÍ») sobre la persona, b-roll a pantalla completa, punch duro en «amigo» y «Síguenos», y la píldora final «Sigue a @tumarca». La voz es una VO de ejemplo escrita en `demo/index.html` (`window.VO`) para que los subtítulos se vean sin audio. En un proyecto creado con `init.sh`:
 
 1. Copia `demo/index.html` y `demo/film.js` a `film/` (sustituyen a los del motor) y `demo/timeline.json` a la raíz del proyecto.
 2. Copia `helpers/talking.js` a `film/talking.js` (el `<script src="talking.js">` y el de `lib/inserts.js` ya van antes de `film.js` en `demo/index.html`). La tipografía es Montserrat ExtraBold, que `init.sh` ya deja en `assets/fonts/captions/`: no hay que copiar fuentes.
@@ -99,7 +99,7 @@ Después pon tu material: tu clip a cámara en lugar de la silueta (`scripts/seq
 ## Cómo adaptarlo a tu marca
 1. **Arranca desde la demo:** sigue «Cómo usar la demo» y parte de esa copia.
 2. **Acento:** pon el color de acento de tu marca en `timeline.captions.accent` y úsalo también en el acento del título de gancho (`TYPE.line(…, { accent: [i] })`), las palabras clave y la píldora del CTA. Conserva los roles: un solo acento, texto base blanco, contorno negro. Si no lee sobre tu imagen, ajusta el tono (más claro u oscuro) o el contorno antes que cambiar de color.
-3. **Tipografías:** si tu marca tiene una sans propia con peso 800 (o 700), cámbiala en el `@font-face` y en `C.fonts`, y pásala a los subtítulos; revisa que los trozos de 4 palabras sigan entrando en el ancho útil a 1080. Si no, quédate con Montserrat ExtraBold.
+3. **Tipografías:** si tu marca tiene una sans propia con peso 800 (o 700), cámbiala en el `@font-face` y en `C.fonts`, y pásala a los subtítulos poniendo en `timeline.captions` tanto `"font"` (tu familia) como `"fontFile": null` (el preset karaoke trae `fontFile` de Montserrat, que si no lo anulas va delante de tu familia y los subtítulos siguen en Montserrat); revisa que los trozos de 4 palabras sigan entrando en el ancho útil a 1080. Si no, quédate con Montserrat ExtraBold.
 4. **CTA y @:** cambia la píldora «Sigue a @tumarca» por el CTA de tu guía de marca (con su verbo y su @ o sitio).
 5. **Metraje:** reemplaza la silueta por tu clip a cámara (`seq.py` + `C.drawSeq` con la misma `z` de punch-ins) y las tarjetas «TU CLIP AQUÍ» por b-roll real que pruebe lo que dice la voz o por los apoyos aprobados (docs/apoyos.json → `INS.full`); si no tienes ni b-roll ni apoyos, quítalas y deja que trabajen los punch-ins.
 6. **Voz y tono:** los títulos de gancho, palabras clave y emojis siguen la voz de la marca (sus palabras a usar y a evitar); si la marca evita emojis, no los uses.

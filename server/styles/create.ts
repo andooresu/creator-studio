@@ -7,6 +7,7 @@ import { ask } from "../ai.ts";
 import type { ContentBlock } from "../ai.ts";
 import { getBrand, load, MOTION_DIR } from "../db.ts";
 import { StylePatch, canPatch, mergeGuide } from "./patch.ts";
+import { captionLooks, canonicalCaptionPreset } from "./captionPresets.ts";
 import { brandToPrompt } from "../brand.ts";
 import { newUserStyle, saveUserStyle, duplicateStyle, snapshotGuide, getStyle, cleanPalette, uniq, listStyles, isBase } from "./store.ts";
 import type { Style, StyleKind } from "../../shared/types.ts";
@@ -21,23 +22,18 @@ export const StyleDraft = z.object({
   guide: z.string().describe("Guía completa en markdown que seguirá el agente productor para hacer videos NUEVOS en este estilo"),
   palette: z.array(z.string()).describe("Colores en hex #RRGGBB: fondo, tinta, acento (uno solo salvo que el estilo pida más), superficies"),
   fonts: z.array(z.string()).describe("Tipografías (preferir Google Fonts u OFL): display y UI"),
-  captionPreset: z.string().describe("Preset de subtítulos de captions/presets.json (p. ej. karaoke-amarillo, pill-sobrio) o cadena vacía si no lleva subtítulos quemados"),
+  captionPreset: z.string().describe("Preset de subtítulos de captions/presets.json (p. ej. karaoke, pill-sobrio) o cadena vacía si no lleva subtítulos quemados"),
 });
 export type StyleDraft = z.infer<typeof StyleDraft>;
 
-/** Presets de subtítulos disponibles en el kit (nombre → para qué sirve). */
+/** Presets de subtítulos disponibles en el kit (nombre → para qué sirve). Solo looks: los alias (nombres viejos) no se ofrecen. */
 export function captionPresets(): Record<string, string> {
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(MOTION_DIR, "captions", "presets.json"), "utf8")) as Record<string, { _meta?: { useFor?: string } } | string>;
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(raw)) if (!k.startsWith("_") && typeof v === "object") out[k] = v?._meta?.useFor || "";
-    return out;
-  } catch { return {}; }
+  return captionLooks();
 }
 
+/** Nombre canónico del preset (un alias como karaoke-amarillo → karaoke) o undefined si no existe. */
 export function validPreset(p: string | undefined | null): string | undefined {
-  if (!p) return undefined;
-  return p in captionPresets() ? p : undefined;
+  return canonicalCaptionPreset(p?.trim());
 }
 
 const readRef = (name: string, max = 12000): string => {
@@ -73,7 +69,7 @@ VOCABULARIO DE MOVIMIENTO DE LA CASA (referencia):
 ${readRef("MOTION_VOCAB.md", 6000)}
 
 PRESETS DE SUBTÍTULOS DISPONIBLES:
-${presets || "- pill-sobrio\n- karaoke-amarillo"}
+${presets || "- pill-sobrio\n- karaoke"}
 
 ${GUIDE_OUTLINE}`;
 }
@@ -143,7 +139,7 @@ async function iterateBySections(target: Style, content: ContentBlock[]): Promis
     palette: p.palette.length ? p.palette : target.tokens.palette,
     fonts: p.fonts.length ? p.fonts : target.tokens.fonts,
     // solo un preset válido o "ninguno" cambia los subtítulos; cualquier otro texto se toma como "sin cambio"
-    captionPreset: preset.toLowerCase() === "ninguno" ? "" : preset && validPreset(preset) ? preset : target.captionPreset || "",
+    captionPreset: preset.toLowerCase() === "ninguno" ? "" : preset && validPreset(preset) ? validPreset(preset)! : target.captionPreset || "",
   };
 }
 

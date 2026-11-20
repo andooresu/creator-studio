@@ -1,0 +1,14 @@
+{
+  "id": "talking-marca",
+  "name": "Talking marca",
+  "kind": "talking",
+  "origin": "base",
+  "description": "Persona a cámara vestida con el color de tu marca: título de gancho sobre una caja de acento, barra de progreso, espacio para el logo, etiquetas y píldora de CTA en el acento, y subtítulos en caja cuyo color es el de la marca. Para cualquier marca que quiera que cada video a cámara se reconozca como suyo en 9:16.",
+  "guide": "",
+  "tokens": { "palette": ["#14161C", "#FFFFFF", "#5B3DF5", "#111111"], "fonts": ["Montserrat"] },
+  "captionPreset": "box-marca",
+  "order": 2,
+  "files": [],
+  "sources": [],
+  "createdAt": "2026-11-20T00:00:00.000Z"
+}

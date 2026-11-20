@@ -8,7 +8,7 @@ describing it.
 | Preset | When |
 |---|---|
 | `pill-sobrio` | Premium, medical, B2B (clínicas, marcas médicas). Quiet, and never competes with the film's own type. Works in CapCut too. |
-| `karaoke-amarillo` | Talking heads, education, and VO-led social ads (talking heads propios). Spoken word in yellow, Montserrat ExtraBold, black outline. MP4 only. |
+| `karaoke` | Talking heads, education, and VO-led social ads. Spoken word in the accent (brand colour; yellow #FFD43B only without a brand), Montserrat ExtraBold, black outline. MP4 only. |
 
 In the interview (INTERVIEW.md round 3), recommend one of these two by reel type, then offer the catalog.
 
@@ -16,9 +16,9 @@ In the interview (INTERVIEW.md round 3), recommend one of these two by reel type
 | Preset | Look | Use for | Learned from | Added |
 |---|---|---|---|---|
 | `pill-sobrio` | Phrase on a dark pill, sentence case | Premium / medical | v2 default | 2026-10-11 |
-| `karaoke-amarillo` | 3–4 word chunks, spoken word yellow + bump | Talking heads, education | AutoCaptions-type packs | 2026-11-09 |
+| `karaoke` | 3–4 word chunks, spoken word in accent + bump (old name `karaoke-amarillo` still works as an alias) | Talking heads, education | AutoCaptions-type packs | 2026-11-09 |
 | `pop-energia` | Words pop in as spoken, overshoot | Energetic ads, offers | Viral word-pop packs | 2026-11-09 |
-| `box-marca` | Accent box slides under the spoken word | Brand-coloured highlight | Highlight-box packs | 2026-11-09 |
+| `box-marca` | Accent box slides under the spoken word; text colour auto (#111 or #fff by contrast with the box) | Brand-coloured highlight | Highlight-box packs | 2026-11-09 |
 | `palabra-hook` | One huge word at a time | Hooks, punchy VO | Single-word packs | 2026-11-09 |
 | `subrayado` | Sentence case, upcoming words dimmed, underline slides | Calm read-along | Knob demo | 2026-11-09 |
 | `caja-blanca` | Dark words on a white card, spoken word in accent | Busy or light footage | TikTok-style boxed captions | 2026-11-09 |
@@ -28,7 +28,7 @@ with voice.
 
 ## Using one in a reel
 ```json
-"captions": { "formats": ["9x16"], "preset": "karaoke-amarillo", "accent": "#00C2A8", "keywords": ["gratis"] }
+"captions": { "formats": ["9x16"], "preset": "karaoke", "accent": "#00C2A8", "keywords": ["gratis"] }
 ```
 The project's keys override the preset (brand accent, y, keywords, emoji). Run `scripts/words.py` and then
 `sync.mjs`. Projects created before 2026-11-09 have no `film/lib/caption_presets.json` and no
@@ -59,6 +59,8 @@ chunking, motion and timing. Never take the content.
 4. **Font:** if the family is free (Google Fonts, OFL), add the TTF to `captions/fonts/` and set `fontFile`. If not,
    use the closest free match and say so.
 5. **Save** the preset in `captions/presets.json` with a Spanish slug and `_meta` (useFor, learnedFrom, added).
+   Name the look by what it does, not by its colour (the colour is the brand's). To rename a look, keep the old
+   name as an alias entry `"old": { "alias": "new", "_meta": { "alias": true } }`: `sync.mjs` follows it.
 6. **Test in the lab:** `sh <skill>/scripts/caption_lab.sh <slug> --bg <reference still>`. Put the lab still next to
    the reference frame and compare type, weight, colour, edge and position. Then watch the mp4 for timing and motion.
    Iterate until a side-by-side comparison passes, then send the user the lab mp4 next to the reference.

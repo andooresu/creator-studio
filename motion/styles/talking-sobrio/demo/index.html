@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>motion reel</title>
+<style>
+  /* Estilo "Talking sobrio": UNA familia, Inter (variable), en 500–700. La copia de la demo la deja en assets/fonts/
+     (fonts/Inter-var.woff2 del estilo). 'UI' es también la fuente por defecto de los subtítulos del preset pill-sobrio.
+     Para la fuente de tu marca, cambia esta @font-face. */
+  @font-face { font-family: 'UI'; src: url(../assets/fonts/Inter-var.woff2) format('woff2'); font-weight: 100 900; }
+  :root {
+    /* tokens del estilo: la persona manda; tinta oscura sobre tarjetas claras y UN acento discreto (el de la marca) */
+    --ink: #15191F; --ink-2: #566070; --paper: #FFFFFF; --accent: #3E8E8A; --shade: rgba(21,25,31,.55);
+    --wall-1: #E9E5DE; --wall-2: #D6D0C6; --suit: #2E3A4B;
+    --display: 'UI', 'Helvetica Neue', Arial, sans-serif;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--wall-1); transform-origin: 0 0;
+           font-family: var(--display); font-weight: 600; color: var(--ink);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  /* título de entrada: tinta oscura sobre la pared clara, sin contorno ni sombra dura */
+  .display { font-family: var(--display); font-weight: 700; letter-spacing: -0.025em; line-height: 1.04; white-space: nowrap; color: var(--ink); }
+  .line { position: absolute; overflow: hidden; padding: 0.1em 0.06em 0.2em; margin: -0.1em -0.06em 0; white-space: nowrap; }
+  .word { display: inline-block; }
+  /* rótulo (lower third): barra de acento + tarjeta clara con nombre y especialidad, cada línea en su máscara */
+  .sob-lt-bar { background: var(--accent); border-radius: 3px; }
+  .sob-lt-card { background: rgba(255,255,255,.96); border-radius: 0 14px 14px 0; white-space: nowrap; line-height: 1.12;
+                 box-shadow: 0 24px 60px -24px rgba(0,0,0,.45); }
+  .sob-mask { overflow: hidden; padding-bottom: 0.08em; }
+  .sob-lt-name { font-weight: 700; letter-spacing: -0.015em; color: var(--ink); }
+  .sob-lt-role { font-weight: 500; letter-spacing: 0.005em; color: var(--ink-2); }
+  /* etiqueta discreta «Pregunta N»: píldora blanca, punto de acento */
+  .sob-chip { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; padding: 0.5em 0.9em 0.52em 0.8em; border-radius: 999px;
+              background: rgba(255,255,255,.94); color: var(--ink); font-weight: 600; letter-spacing: 0.005em;
+              box-shadow: 0 14px 34px -16px rgba(0,0,0,.4); }
+  .sob-chip i { display: inline-block; width: 0.42em; height: 0.42em; border-radius: 50%; background: var(--accent); margin-right: 0.5em; vertical-align: 0.1em; }
+  /* tarjeta de b-roll: esquina 24 px, sombra suave y profunda, nunca glow */
+  .broll { position: absolute; left: 0; top: 0; overflow: hidden; border-radius: 24px; transform-origin: 50% 50%;
+           box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 40px 90px -30px rgba(0,0,0,.55); }
+  .ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.45em;
+        color: rgba(255,255,255,.95); font-weight: 700; letter-spacing: 0.04em; text-align: center; text-transform: uppercase; }
+  .ph .play { width: 1.9em; height: 1.9em; border-radius: 50%; background: rgba(0,0,0,.28); position: relative; }
+  .ph .play::after { content: ''; position: absolute; left: 0.75em; top: 0.55em; border-style: solid; border-width: 0.4em 0 0.4em 0.62em;
+                     border-color: transparent transparent transparent #fff; }
+  .ph small { font-size: 0.68em; font-weight: 600; opacity: .85; letter-spacing: 0.06em; }
+  .tag { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; padding: 0.45em 0.8em; border-radius: 999px;
+         background: var(--shade); color: rgba(255,255,255,.92); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; transform-origin: 50% 50%; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script>
+  // VO DE EJEMPLO (solo para la demo): frases y palabras con tiempos en segundos sobre la rejilla de 90 BPM.
+  // Con tu voz real (scripts/vo.py + scripts/words.py → sync.mjs) window.VO ya viene lleno y esto no se usa.
+  if (!window.VO || !window.VO.length) {
+    const P = (id, t0, t1, text, ws) => ({ id, t0, t1, text, words: ws.map(([w, a, b]) => ({ w, t0: a, t1: b })) });
+    window.VO = [
+      P('p1', 0.05, 2.75, 'Antes de contratar un servicio, haz estas tres preguntas.', [['Antes', 0.05, 0.35], ['de', 0.35, 0.45], ['contratar', 0.45, 0.95], ['un', 0.95, 1.05], ['servicio,', 1.05, 1.55], ['haz', 1.7, 1.9], ['estas', 1.9, 2.1], ['tres', 2.1, 2.3], ['preguntas.', 2.3, 2.75]]),
+      P('p2', 3.0, 5.0, 'Primero: ¿qué incluye exactamente?', [['Primero:', 3.0, 3.45], ['¿qué', 3.6, 3.8], ['incluye', 3.8, 4.2], ['exactamente?', 4.2, 5.0]]),
+      P('p3', 5.4, 7.3, 'Segundo: ¿cuánto tiempo toma?', [['Segundo:', 5.4, 5.85], ['¿cuánto', 6.0, 6.35], ['tiempo', 6.35, 6.75], ['toma?', 6.75, 7.3]]),
+      P('p4', 7.6, 10.2, 'Y tercero: ¿quién te acompaña en el proceso?', [['Y', 7.6, 7.7], ['tercero:', 7.7, 8.2], ['¿quién', 8.35, 8.6], ['te', 8.6, 8.7], ['acompaña', 8.7, 9.2], ['en', 9.2, 9.3], ['el', 9.3, 9.4], ['proceso?', 9.4, 10.2]]),
+      P('p5', 10.6, 12.6, 'Escríbenos y resolvemos tus dudas.', [['Escríbenos', 10.6, 11.2], ['y', 11.2, 11.3], ['resolvemos', 11.3, 11.9], ['tus', 11.9, 12.05], ['dudas.', 12.05, 12.6]]),
+    ];
+  }
+</script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="sobrio.js"></script>
+<script src="lib/inserts.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

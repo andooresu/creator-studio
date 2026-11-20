@@ -82,7 +82,7 @@ Un estilo reúne colores, tipografías, vocabulario de movimiento, plantillas de
 - Los estilos que importes o crees se guardan en `data/styles/`, nunca en el repositorio.
 
 ### Estilos incluidos (plantillas para empezar)
-Vienen 9 estilos base en `motion/styles/`, listos para usar o duplicar. Cada uno trae su guía, helpers, una **demo renderizable** (`demo/`) con textos de ejemplo («TU CLIP AQUÍ», «TU LOGO», «@tumarca») y tipografías libres (OFL). No contienen marcas, clientes ni material de nadie: cambia colores, textos y clips por los tuyos.
+Vienen 13 estilos base en `motion/styles/`, listos para usar o duplicar. Cada uno trae su guía, helpers, una **demo renderizable** (`demo/`) con textos de ejemplo («TU CLIP AQUÍ», «TU LOGO», «@tumarca») y tipografías libres (OFL). No contienen marcas, clientes ni material de nadie: cambia colores, textos y clips por los tuyos.
 
 Cada estilo se ve **en movimiento** antes de elegirlo: en **Estilos** la galería reproduce su demo al pasar el mouse (y completa al abrirlo), y al crear un proyecto el selector también muestra la vista previa. Los estilos que importes de tus proyectos toman como vista previa un recorte de uno de tus renders; los que tengan demo (por ejemplo, una copia de un estilo base que modificaste) pueden regenerarla con «Generar vista previa». Para regenerar las de los estilos base: `node server/tools/style-previews.ts --force`.
 
@@ -96,7 +96,13 @@ Cada estilo se ve **en movimiento** antes de elegirlo: en **Estilos** la galerí
 | Precisión nocturna | reel | Técnico y nocturno: escaneo punto por punto sobre esquemas de línea fina |
 | Punto cinético | reel | Motion tipográfico: cada frase cierra con un punto que se abre a la siguiente escena |
 | Ilustrado sereno | reel | Ilustración plana y pausada con personaje, tipografía grande palabra por palabra |
-| Talking karaoke | talking | Persona a cámara con subtítulos karaoke, punch-ins y b-roll |
+| Talking karaoke | talking | Persona a cámara con subtítulos karaoke, punch-ins y b-roll (plantilla a cámara por defecto) |
+| Talking sobrio | talking | A cámara sereno: rótulo con nombre y especialidad, acercamientos lentos; para clínicas, salud, B2B y servicios |
+| Talking marca | talking | A cámara con tu marca al frente: título de gancho en caja de color, barra de progreso y CTA en el acento |
+| Talking palabra | talking | A cámara de alta energía: una palabra grande a la vez, cortes y golpes duros; para ganchos y ventas directas |
+| Talking con datos | talking | A cámara en tarjeta con paneles de datos: cifra clave, barras comparativas y pasos; para explicativos |
+
+Las plantillas a cámara aparecen en este orden (campo `order` de `style.json`) y la primera, «Talking karaoke», es la que se elige por defecto. Los subtítulos de las plantillas toman el acento de tu marca; en `box-marca` el texto dentro de la caja pasa solo a negro o blanco según lo que contraste más.
 
 En **Estilos** usa «Duplicar» para crear tu versión editable (se guarda en `data/styles/`); el original queda intacto.
 

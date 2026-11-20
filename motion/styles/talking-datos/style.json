@@ -1,0 +1,14 @@
+{
+  "id": "talking-datos",
+  "name": "Talking con datos",
+  "kind": "talking",
+  "origin": "base",
+  "description": "Persona a cámara dentro de una tarjeta redondeada que se encoge a la esquina mientras entran paneles con una cifra que cuenta, barras de comparación y una lista de pasos, con subtítulos en caja del color de la marca. Para explicativos, educación y videos con datos en 9:16.",
+  "guide": "",
+  "tokens": { "palette": ["#12161D", "#F4F6F8", "#4CC9F0", "#1E2530"], "fonts": ["Montserrat"] },
+  "captionPreset": "box-marca",
+  "order": 4,
+  "files": [],
+  "sources": [],
+  "createdAt": "2026-11-20T00:00:00.000Z"
+}

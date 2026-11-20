@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MOTION_DIR } from "../db.ts";
+import { captionPresetNameSet, canonicalCaptionPreset } from "../styles/captionPresets.ts";
 import { activeBrand } from "./prompt.ts";
 import type { StartFlags } from "./prompt.ts";
 import type { Brand, Project, Style } from "../../shared/types.ts";
@@ -133,12 +134,9 @@ export function brandColors(guide: BrandGuide | null | undefined): BrandColors {
   return out;
 }
 
-/** Nombres de los presets de subtítulos del kit (motion/captions/presets.json). */
+/** Nombres de los presets de subtítulos del kit (motion/captions/presets.json), incluidos los alias de nombres viejos. */
 export function captionPresetNames(): Set<string> {
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(MOTION_DIR, "captions", "presets.json"), "utf8")) as Record<string, unknown>;
-    return new Set(Object.keys(raw).filter((k) => !k.startsWith("_")));
-  } catch { return new Set(); }
+  return captionPresetNameSet();
 }
 
 /** Acento de subtítulos: concepto aprobado → acento de la marca → paleta[2] del estilo → ninguno (queda el del preset). */
@@ -192,7 +190,8 @@ export function brandPresetFor(p: Project, flags: StartFlags | undefined, style:
   const accent = captionAccent(p, brand, style);
   const known = captionPresetNames();
   const captions: Record<string, unknown> = {};
-  if (style?.captionPreset && known.has(style.captionPreset)) captions.preset = style.captionPreset;
+  // un estilo guardado con un nombre viejo (karaoke-amarillo) sigue valiendo: se escribe el nombre canónico (karaoke)
+  if (style?.captionPreset && known.has(style.captionPreset)) captions.preset = canonicalCaptionPreset(style.captionPreset) || style.captionPreset;
   if (accent) captions.accent = accent;
   const logo = brandLogo(brand);
 

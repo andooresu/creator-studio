@@ -1,0 +1,118 @@
+{
+  "note": "Demo del estilo Talking sobrio: 13,4 s a 90 BPM (20 beats), todo en beats. La persona es un marcador dibujado y la voz una VO de ejemplo escrita en demo/index.html (window.VO): al poner tu clip y tu voz real (vo.py + words.py) esa VO de ejemplo se ignora sola. Copia este archivo a la raíz del proyecto y corre node scripts/sync.mjs.",
+  "title": "Demo — Talking sobrio",
+  "duration": 13.4,
+  "fps": 60,
+  "bpm": 90,
+  "formats": [
+    "9x16",
+    "16x9"
+  ],
+  "music": {
+    "source": "synth",
+    "chords": [
+      "Fmaj7",
+      "Am7",
+      "Dm7",
+      "C"
+    ],
+    "sections": [
+      {
+        "at": "hook",
+        "kind": "intro"
+      },
+      {
+        "at": "q1",
+        "kind": "full"
+      },
+      {
+        "at": "q3",
+        "kind": "build"
+      },
+      {
+        "at": "cta",
+        "kind": "full"
+      }
+    ],
+    "accents": [
+      "cta_card"
+    ]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0,
+    "hook_push": 1.6,
+    "lt_in": 1.6,
+    "hook_out": 3.5,
+    "q1": 4.5,
+    "q1_card": 5.6,
+    "q1_card_out": 7.8,
+    "q1_out": 7.8,
+    "lt_out": 8.0,
+    "q2": 8.1,
+    "q2_punch": 9.4,
+    "q2_back": 10.8,
+    "q2_out": 10.9,
+    "q3": 11.4,
+    "q3_punch": 14.0,
+    "q3_out": 15.2,
+    "cta": 15.9,
+    "cta_card": 16.4,
+    "done": 20
+  },
+  "sfx": [
+    {
+      "at": "lt_in",
+      "type": "whoosh",
+      "gain": 0.3,
+      "what": "rótulo de nombre entra con máscara"
+    },
+    {
+      "at": "q1",
+      "type": "pop",
+      "gain": 0.3,
+      "what": "etiqueta Pregunta 1"
+    },
+    {
+      "at": "q1_card",
+      "type": "whoosh",
+      "gain": 0.35,
+      "what": "tarjeta de b-roll se descubre"
+    },
+    {
+      "at": "q2",
+      "type": "pop",
+      "gain": 0.3,
+      "what": "etiqueta Pregunta 2"
+    },
+    {
+      "at": "q3",
+      "type": "pop",
+      "gain": 0.3,
+      "what": "etiqueta Pregunta 3"
+    },
+    {
+      "at": "cta_card",
+      "type": "whoosh",
+      "gain": 0.35,
+      "what": "rótulo de cierre entra con máscara"
+    }
+  ],
+  "captions": {
+    "formats": [
+      "9x16",
+      "16x9"
+    ],
+    "preset": "pill-sobrio",
+    "skip": [
+      "Antes de contratar un servicio, haz estas tres preguntas."
+    ],
+    "yFmt": {
+      "16x9": 0.86
+    }
+  },
+  "lint": {
+    "minText": {},
+    "ignore": []
+  }
+}

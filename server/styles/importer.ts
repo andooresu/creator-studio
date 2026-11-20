@@ -233,7 +233,8 @@ export function extractFamily(fam: Family, outDir: string, step: Step = () => {}
 
   // timelines
   const timelines = fam.projects.map((p) => timelineInfo(slugOf(p), readJson(path.join(p, "timeline.json"))));
-  const presets = timelines.map((t) => t.captions?.preset).filter((x): x is string => Boolean(x));
+  // nombre canónico antes de contar (karaoke-amarillo y karaoke son el mismo look); los desconocidos quedan tal cual
+  const presets = timelines.map((t) => t.captions?.preset).filter((x): x is string => Boolean(x)).map((x) => validPreset(x) ?? x);
   const captionPreset = presets.sort((a, b) => presets.filter((x) => x === b).length - presets.filter((x) => x === a).length)[0];
 
   // tokens y fuentes (del primer representativo con index.html)
@@ -344,7 +345,7 @@ const humanize = (slug: string): string => slug.replace(/[-_]+/g, " ").replace(/
 function guessKind(m: FamilyMaterial): StyleKind {
   const s = m.slug.toLowerCase();
   if (/clase|curso|leccion|lección|academ|tutorial|explica/.test(s)) return "clase";
-  if (/talking|podcast|entrevista/.test(s) || m.captionPreset === "karaoke-amarillo") return "talking";
+  if (/talking|podcast|entrevista/.test(s) || validPreset(m.captionPreset) === "karaoke") return "talking";
   return "reel";
 }
 

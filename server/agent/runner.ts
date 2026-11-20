@@ -1614,10 +1614,12 @@ export function syncApoyos(p: Project, dir: string): string {
   }
 }
 
-/** Aviso para el agente cuando repairEngineLibs repuso una copia de film/lib/inserts.js que había cambiado ("" si no). */
+/** Aviso para el agente cuando repairEngineLibs repuso una copia de film/lib/inserts.js o captions.js que había cambiado ("" si no). */
 function libsNote(done: string[]): string {
-  return done.some((d) => d.startsWith("film/lib/inserts.js") && d.includes("repuesta"))
-    ? "La app repuso film/lib/inserts.js con la versión del kit (es de solo lectura y se repone en cada inicio). Si la habías editado, esos cambios ya no están: pon tus ajustes en film.js y vuelve a correr lint.mjs antes de renderizar."
+  const files = done.filter((d) => d.includes("repuesta")).map((d) => d.replace(/ \(repuesta\)$/, ""))
+    .filter((f) => f === "film/lib/inserts.js" || f === "film/lib/captions.js");
+  return files.length
+    ? `La app repuso ${files.join(" y ")} con la versión del kit (es de solo lectura y se repone en cada inicio). Si la habías editado, esos cambios ya no están: pon tus ajustes en film.js (o en timeline.json → captions) y vuelve a correr lint.mjs antes de renderizar.`
     : "";
 }
 

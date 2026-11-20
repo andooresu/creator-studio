@@ -1,0 +1,14 @@
+{
+  "id": "talking-sobrio",
+  "name": "Talking sobrio",
+  "kind": "talking",
+  "origin": "base",
+  "description": "Persona a cámara con rótulo de nombre y especialidad, subtítulos en píldora discreta, punch-ins lentos y un solo acento contenido. Para clínicas, salud, B2B y servicios profesionales que quieren verse serios y cercanos en 9:16.",
+  "guide": "",
+  "tokens": { "palette": ["#E9E5DE", "#15191F", "#3E8E8A", "#FFFFFF", "#566070"], "fonts": ["Inter"] },
+  "captionPreset": "pill-sobrio",
+  "order": 1,
+  "files": [],
+  "sources": [],
+  "createdAt": "2026-11-20T00:00:00.000Z"
+}

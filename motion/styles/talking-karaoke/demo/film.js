@@ -2,7 +2,7 @@
 // La persona es un MARCADOR DIBUJADO (silueta plana en un canvas) que respira y se mueve un poco: en tu proyecto
 // cámbiala por tu clip (frames con scripts/seq.py y C.drawSeq(g, frames, t, t0, box, { z, pos })) — los punch-ins,
 // cortes de toma, b-roll, etiquetas y CTA de abajo funcionan igual sobre el clip real.
-// Muestra: título de gancho en el frame 0, subtítulos karaoke (lib/captions.js, preset karaoke-amarillo), corte de toma
+// Muestra: título de gancho en el frame 0, subtítulos karaoke (lib/captions.js, preset karaoke), corte de toma
 // con cambio de escala, punch-in en el énfasis, punch duro en el remate, b-roll en tarjeta y a pantalla completa,
 // barra de progreso y CTA final. Función pura de t: sin timers, sin Math.random.
 (() => {

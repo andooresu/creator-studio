@@ -260,8 +260,63 @@ export function scaffoldDir(dir: string, owner: string, opts: ScaffoldOpts = {})
 }
 
 /**
+ * Copia vieja de film/lib/caption_presets.json (proyectos creados antes de un look nuevo o de un cambio de nombre, p. ej.
+ * karaoke-amarillo → karaoke): agrega los nombres del kit que faltan, sin tocar los que ya tiene (pueden estar ajustados).
+ * Un alias del kit se agrega como copia completa del look al que apunta, para que también funcione con un sync.mjs viejo
+ * que no sigue alias. true si cambió el archivo.
+ */
+/** [preset, knob, valor viejo del kit]: Entrega 5 pasó box-marca.boxText de "#111" a "auto" (contraste con el acento). */
+const PRESET_KNOB_UPDATES: [string, string, unknown][] = [["box-marca", "boxText", "#111"]];
+function repairCaptionPresets(dir: string): boolean {
+  const file = path.join(dir, "film", "lib", "caption_presets.json");
+  if (!fs.existsSync(file) || fs.lstatSync(file).isSymbolicLink()) return false;
+  const kit = JSON.parse(fs.readFileSync(path.join(MOTION_DIR, "captions", "presets.json"), "utf8")) as Record<string, unknown>;
+  let have: Record<string, unknown>;
+  try { have = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>; } catch { return false; } // no se pisa un archivo roto
+  const isObjEntry = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+  const lookOf = (name: string): Record<string, unknown> | null => {
+    let n = name;
+    for (let hop = 0; hop < 5; hop++) {
+      const own = have[n];
+      const v = isObjEntry(own) && typeof own.alias !== "string" ? own : kit[n]; // el look del proyecto manda
+      if (!isObjEntry(v)) return null;
+      if (typeof v.alias !== "string") return v;
+      n = v.alias;
+    }
+    return null;
+  };
+  let changed = false;
+  // nombre nuevo de un look viejo: la copia del proyecto tiene el look bajo el nombre viejo (alias en el kit) → se copia
+  for (const [k, v] of Object.entries(kit)) {
+    if (k.startsWith("_") || !isObjEntry(v) || typeof v.alias !== "string") continue;
+    const target = v.alias;
+    const old = have[k];
+    if (isObjEntry(old) && typeof old.alias !== "string" && !(target in have)) { have[target] = old; changed = true; }
+  }
+  // valores por defecto del kit que cambiaron: si la copia del proyecto aún tiene el valor viejo exacto, se pone el nuevo
+  // (un valor distinto es un ajuste del proyecto y se respeta)
+  for (const [name, key, from] of PRESET_KNOB_UPDATES) {
+    const own = have[name], kv = kit[name];
+    if (isObjEntry(own) && isObjEntry(kv) && own[key] === from && kv[key] !== undefined && kv[key] !== from) {
+      have[name] = { ...own, [key]: kv[key], ...(isObjEntry(kv._meta) ? { _meta: kv._meta } : {}) };
+      changed = true;
+    }
+  }
+  for (const [k, v] of Object.entries(kit)) {
+    if (k.startsWith("_") || k in have || !isObjEntry(v)) continue;
+    const look = typeof v.alias === "string" ? lookOf(v.alias) : v;
+    if (!look) continue;
+    have[k] = typeof v.alias === "string" ? { ...look, _meta: { ...(isObjEntry(look._meta) ? look._meta : {}), copyOf: v.alias } } : look;
+    changed = true;
+  }
+  if (changed) fs.writeFileSync(file, JSON.stringify(have, null, 2) + "\n");
+  return changed;
+}
+
+const LIBS_REPAIRED = ["inserts.js", "captions.js"];
+/**
  * Reparación barata de una carpeta ya preparada (proyectos creados antes de que existiera un archivo del motor):
- * copia film/lib/inserts.js si falta o difiere del kit, crea assets/apoyos y, si film/index.html carga film.js sin
+ * copia film/lib/inserts.js y film/lib/captions.js si faltan o difieren del kit, actualiza caption_presets.json, crea assets/apoyos y, si film/index.html carga film.js sin
  * cargar antes lib/inserts.js, agrega esa etiqueta justo antes de film.js. Nunca lanza: devuelve lo que cambió.
  */
 export function repairEngineLibs(dir: string): string[] {
@@ -269,18 +324,23 @@ export function repairEngineLibs(dir: string): string[] {
   try {
     if (!fs.existsSync(path.join(dir, "film"))) return done;
     fs.mkdirSync(path.join(dir, "assets", "apoyos"), { recursive: true });
-    const src = path.join(MOTION_DIR, "engine", "lib", "inserts.js");
-    const dst = path.join(dir, "film", "lib", "inserts.js");
-    const want = fs.readFileSync(src);
-    let have: Buffer | null = null;
-    try { if (!fs.lstatSync(dst).isSymbolicLink()) have = fs.readFileSync(dst); } catch {}
-    if (!have || !have.equals(want)) {
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.rmSync(dst, { force: true }); // por si era un enlace: siempre una copia real dentro del proyecto
-      fs.writeFileSync(dst, want);
-      // "repuesta": había una copia distinta (versión vieja del kit o una edición del agente) y se reemplazó
-      done.push(have ? "film/lib/inserts.js (repuesta)" : "film/lib/inserts.js");
+    // inserts.js y captions.js son del kit (de solo lectura para el agente): una copia vieja no entiende opciones nuevas
+    // (p. ej. boxText "auto" de captions.js), así que se reponen si faltan o difieren
+    for (const lib of LIBS_REPAIRED) {
+      const src = path.join(MOTION_DIR, "engine", "lib", lib);
+      const dst = path.join(dir, "film", "lib", lib);
+      const want = fs.readFileSync(src);
+      let have: Buffer | null = null;
+      try { if (!fs.lstatSync(dst).isSymbolicLink()) have = fs.readFileSync(dst); } catch {}
+      if (!have || !have.equals(want)) {
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.rmSync(dst, { force: true }); // por si era un enlace: siempre una copia real dentro del proyecto
+        fs.writeFileSync(dst, want);
+        // "repuesta": había una copia distinta (versión vieja del kit o una edición del agente) y se reemplazó
+        done.push(have ? `film/lib/${lib} (repuesta)` : `film/lib/${lib}`);
+      }
     }
+    if (repairCaptionPresets(dir)) done.push("film/lib/caption_presets.json");
     const html = path.join(dir, "film", "index.html");
     if (fs.existsSync(html) && !fs.lstatSync(html).isSymbolicLink()) {
       const s = fs.readFileSync(html, "utf8");

@@ -2,7 +2,7 @@
 # Caption lab: render any caption preset or style over a neutral sample voice, to try, compare and LEARN formats
 # without touching a real reel. Run from anywhere (output defaults to ./caption-lab/).
 #
-#   sh <skill>/scripts/caption_lab.sh karaoke-amarillo                       a preset from captions/presets.json
+#   sh <skill>/scripts/caption_lab.sh karaoke                                a preset from captions/presets.json
 #   sh <skill>/scripts/caption_lab.sh pop                                    a bare style
 #   sh <skill>/scripts/caption_lab.sh caja-blanca --set '{"accent":"#00C2A8"}'   override knobs (JSON)
 #   sh <skill>/scripts/caption_lab.sh mi-nuevo --bg refs/x/frame.jpg         put a reference still behind it (side-by-side check)
@@ -23,7 +23,7 @@ while [ $# -gt 0 ]; do case "$1" in
 mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 
 if [ "$NAME" = all ]; then
-  LIST=$(node -e "const P=require('$SKILL/captions/presets.json');console.log(Object.keys(P).filter(k=>!k.startsWith('_')).join(' '))")
+  LIST=$(node -e "const P=require('$SKILL/captions/presets.json');console.log(Object.keys(P).filter(k=>!k.startsWith('_')&&!P[k].alias).join(' '))")
   for p in $LIST; do sh "$0" "$p" --out "$OUT" ${BG:+--bg "$BG"}; done
   ARGS=""; F=""; i=0
   for p in $LIST; do ARGS="$ARGS -i $OUT/$p.mp4"; F="$F[$i:v]scale=360:-2[v$i];"; i=$((i+1)); done

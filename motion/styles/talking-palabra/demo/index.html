@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>motion reel</title>
+<style>
+  /* Estilo "Talking palabra": UNA familia, Montserrat ExtraBold 800 (la misma de los subtítulos del preset palabra-hook).
+     init.sh ya la deja en assets/fonts/captions/. Para la fuente de tu marca, cambia esta @font-face y --display. */
+  @font-face { font-family: 'Montserrat'; src: url(../assets/fonts/captions/Montserrat-ExtraBold.ttf); font-weight: 800; }
+  :root {
+    /* tokens del estilo: fondo oscuro de estudio, texto blanco, UN acento (golpes de palabra, palabras clave, CTA) */
+    --ink: #111111; --white: #FFFFFF; --accent: #FF5A1F; --shade: rgba(0,0,0,.58);
+    --room-1: #0C0D10; --room-2: #1A1C22;
+    --display: 'Montserrat', 'Arial Black', Arial, sans-serif;
+  }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: var(--room-1); transform-origin: 0 0;
+           font-family: var(--display); font-weight: 800; color: var(--white);
+           -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  .scene { position: absolute; inset: 0; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  /* palabra del gancho: mayúsculas, contorno negro como los subtítulos, sombra suave */
+  .stamp { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; transform-origin: 0 50%;
+           font-family: var(--display); font-weight: 800; letter-spacing: -0.03em; text-transform: uppercase;
+           -webkit-text-stroke: 0.07em #000; paint-order: stroke fill; text-shadow: 0 8px 28px rgba(0,0,0,.5); }
+  .stamp.acc { color: var(--accent); }
+  /* golpe de palabra a pantalla completa: fondo de acento, palabra gigante (tinta por contraste, la pone film.js) */
+  .slam { position: absolute; left: 0; top: 0; overflow: hidden; background: var(--accent); z-index: 60; }
+  .slam .lines { position: absolute; inset: -20%; background: repeating-linear-gradient(-58deg, rgba(0,0,0,.07) 0 34px, rgba(0,0,0,0) 34px 120px); }
+  .slam .word { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; text-transform: uppercase;
+                letter-spacing: -0.04em; transform-origin: 50% 50%; }
+  /* marcador de la persona dibujada */
+  .tag { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; padding: 0.45em 0.8em; border-radius: 999px;
+         background: var(--shade); color: rgba(255,255,255,.9); letter-spacing: 0.05em; text-transform: uppercase; transform-origin: 50% 50%; }
+  /* CTA: píldora de acento */
+  .cta { position: absolute; left: 0; top: 0; white-space: nowrap; line-height: 1; padding: 0.5em 0.95em 0.55em; border-radius: 999px;
+         background: var(--accent); transform-origin: 50% 50%; box-shadow: 0 16px 50px -12px rgba(0,0,0,.6); text-transform: uppercase; }
+  body.play { display: block; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="lib/motion.js"></script>
+<script src="data.js"></script>
+<script>
+  // VO DE EJEMPLO (solo para la demo): frases y palabras con tiempos en segundos sobre la rejilla de 120 BPM.
+  // Con tu voz real (scripts/vo.py + scripts/words.py → sync.mjs) window.VO ya viene lleno y esto no se usa.
+  // * marca una palabra clave (va en acento y algo más grande).
+  if (!window.VO || !window.VO.length) {
+    const P = (id, t0, t1, text, ws) => ({ id, t0, t1, text, words: ws.map(([w, a, b]) => ({ w, t0: a, t1: b })) });
+    window.VO = [
+      P('p1', 0.0, 1.45, '¿Quieres vender más?', [['¿Quieres', 0.0, 0.45], ['vender', 0.5, 0.95], ['más?', 1.0, 1.45]]),
+      P('p2', 1.75, 2.35, 'Escucha.', [['Escucha.', 1.75, 2.35]]),
+      P('p3', 2.55, 4.35, 'Primero, muestra el *problema* real.', [['Primero,', 2.55, 3.0], ['muestra', 3.05, 3.35], ['el', 3.35, 3.48], ['problema', 3.5, 4.0], ['real.', 4.0, 4.35]]),
+      P('p4', 4.55, 6.2, 'Luego, tu *solución* en una frase.', [['Luego,', 4.55, 4.85], ['tu', 4.85, 4.98], ['solución', 5.0, 5.55], ['en', 5.55, 5.65], ['una', 5.65, 5.8], ['frase.', 5.8, 6.2]]),
+      P('p5', 6.5, 7.05, 'Simple.', [['Simple.', 6.5, 7.05]]),
+      P('p6', 7.3, 9.0, 'Cierra con una *oferta* clara.', [['Cierra', 7.3, 7.65], ['con', 7.65, 7.78], ['una', 7.78, 7.95], ['oferta', 8.0, 8.45], ['clara.', 8.5, 9.0]]),
+      P('p7', 9.5, 10.8, 'Escríbenos hoy mismo.', [['Escríbenos', 9.5, 10.05], ['hoy', 10.1, 10.35], ['mismo.', 10.35, 10.8]]),
+    ];
+  }
+</script>
+<script src="core.js"></script>
+<script src="type.js"></script>
+<script src="lib/media.js"></script>
+<script src="lib/captions.js"></script>
+<script src="palabra.js"></script>
+<script src="lib/inserts.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

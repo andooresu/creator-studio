@@ -1,0 +1,179 @@
+{
+  "note": "Demo del estilo Talking con datos: 14,4 s a 100 BPM (24 beats), todo en beats. La persona es un marcador dibujado, la voz una VO de ejemplo escrita en demo/index.html (window.VO) y las cifras son de EJEMPLO (se rotulan así en pantalla): al poner tu clip, tu voz real (vo.py + words.py) y tus datos, todo eso se reemplaza. Copia este archivo a la raíz del proyecto y corre node scripts/sync.mjs.",
+  "title": "Demo — Talking con datos",
+  "duration": 14.4,
+  "fps": 60,
+  "bpm": 100,
+  "formats": [
+    "9x16"
+  ],
+  "music": {
+    "source": "synth",
+    "chords": [
+      "Dm",
+      "Bb",
+      "F",
+      "C"
+    ],
+    "sections": [
+      {
+        "at": "hook",
+        "kind": "intro"
+      },
+      {
+        "at": "d1",
+        "kind": "full"
+      },
+      {
+        "at": "d3",
+        "kind": "build"
+      },
+      {
+        "at": "cta",
+        "kind": "drop"
+      }
+    ],
+    "accents": [
+      "d1",
+      "cta_pill"
+    ]
+  },
+  "voiceover": null,
+  "marks": {
+    "hook": 0,
+    "hook_w2": 1.8,
+    "hook_punch": 2.1,
+    "hook_out": 3.4,
+    "d1": 4,
+    "d1_head": 4.25,
+    "d1_panel": 4.5,
+    "d1_count": 5.25,
+    "d1_out": 8.75,
+    "d2": 9,
+    "d2_head": 9.25,
+    "d2_panel": 9.25,
+    "d2_bar_a": 11.5,
+    "d2_bar_b": 12.5,
+    "d2_out": 13.75,
+    "d3": 14,
+    "d3_head": 14.25,
+    "d3_panel": 14.25,
+    "d3_s1": 15.5,
+    "d3_s2": 16.5,
+    "d3_s3": 17.5,
+    "d3_out": 18.75,
+    "cta": 19,
+    "cta_punch": 20.25,
+    "cta_back": 21.5,
+    "cta_pill": 21,
+    "pulse": 22.5,
+    "done": 24
+  },
+  "sfx": [
+    {
+      "at": "hook",
+      "type": "pop",
+      "gain": 0.6,
+      "what": "título de gancho (visible en el frame 0)"
+    },
+    {
+      "at": "hook_w2",
+      "type": "pop",
+      "gain": 0.55,
+      "what": "caja de acento en «datos»"
+    },
+    {
+      "at": "d1",
+      "type": "whoosh",
+      "gain": 0.55,
+      "what": "la tarjeta de la persona se encoge a la esquina"
+    },
+    {
+      "at": "d1_count",
+      "type": "tick",
+      "gain": 0.4,
+      "what": "la cifra clave cuenta"
+    },
+    {
+      "at": "d2_panel",
+      "type": "whoosh",
+      "gain": 0.45,
+      "what": "panel de comparación entra empujando"
+    },
+    {
+      "at": "d2_bar_a",
+      "type": "pop",
+      "gain": 0.35,
+      "what": "barra opción A"
+    },
+    {
+      "at": "d2_bar_b",
+      "type": "pop",
+      "gain": 0.45,
+      "what": "barra opción B (destacada)"
+    },
+    {
+      "at": "d3_panel",
+      "type": "whoosh",
+      "gain": 0.45,
+      "what": "panel de pasos entra empujando"
+    },
+    {
+      "at": "d3_s1",
+      "type": "pop",
+      "gain": 0.35,
+      "what": "paso 1"
+    },
+    {
+      "at": "d3_s2",
+      "type": "pop",
+      "gain": 0.35,
+      "what": "paso 2"
+    },
+    {
+      "at": "d3_s3",
+      "type": "pop",
+      "gain": 0.35,
+      "what": "paso 3"
+    },
+    {
+      "at": "cta",
+      "type": "whoosh",
+      "gain": 0.5,
+      "what": "la tarjeta vuelve a ocupar el cuadro"
+    },
+    {
+      "at": "cta_pill",
+      "type": "pop",
+      "gain": 0.6,
+      "what": "píldora CTA"
+    },
+    {
+      "at": "pulse",
+      "type": "pop",
+      "gain": 0.3,
+      "what": "pulso de la píldora"
+    }
+  ],
+  "captions": {
+    "formats": [
+      "9x16"
+    ],
+    "preset": "box-marca",
+    "accent": "#4CC9F0",
+    "keywords": [
+      "cifra",
+      "pasos",
+      "síguenos"
+    ],
+    "skip": [
+      "Esto es lo que dicen los datos."
+    ],
+    "size": 66,
+    "y": 0.73
+  },
+  "lint": {
+    "minText": {},
+    "ignore": []
+  }
+}

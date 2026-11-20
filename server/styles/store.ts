@@ -73,12 +73,14 @@ function readBaseStyles(): Style[] {
   }).join("|");
   if (baseCache && baseCache.key === key) return baseCache.styles;
   const styles: Style[] = [];
+  const order = new Map<string, number>(); // style.json "order" (menor primero; sin order: después de los ordenados, por id)
   for (const sid of ids) {
     const d = path.join(BASE_STYLES_DIR, sid);
     const f = path.join(d, "style.json");
     if (!fs.existsSync(f)) continue;
     try {
-      const raw = JSON.parse(fs.readFileSync(f, "utf8")) as Partial<Style>;
+      const raw = JSON.parse(fs.readFileSync(f, "utf8")) as Partial<Style> & { order?: unknown };
+      if (typeof raw.order === "number" && Number.isFinite(raw.order)) order.set(sid, raw.order);
       const guideFile = path.join(d, "guide.md");
       const guide = raw.guide || (fs.existsSync(guideFile) ? fs.readFileSync(guideFile, "utf8") : "");
       styles.push({
@@ -99,6 +101,8 @@ function readBaseStyles(): Style[] {
       console.warn(`Estilo base ${sid} ilegible: ${(e as Error).message}`);
     }
   }
+  // ids ya vienen por orden alfabético y sort es estable: los que no tienen order quedan detrás, por id
+  styles.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) || 0);
   baseCache = { key, styles };
   return styles;
 }

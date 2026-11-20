@@ -1,0 +1,14 @@
+{
+  "id": "talking-palabra",
+  "name": "Talking palabra",
+  "kind": "talking",
+  "origin": "base",
+  "description": "Persona a cámara con una sola palabra gigante a la vez, cortes y punch-ins secos en los beats y golpes de palabra a pantalla completa en el color de acento. Para ganchos de alta energía, ventas directas y anuncios rápidos en 9:16.",
+  "guide": "",
+  "tokens": { "palette": ["#0C0D10", "#ffffff", "#ff5a1f", "#111111"], "fonts": ["Montserrat"] },
+  "captionPreset": "palabra-hook",
+  "order": 3,
+  "files": [],
+  "sources": [],
+  "createdAt": "2026-11-20T00:00:00.000Z"
+}

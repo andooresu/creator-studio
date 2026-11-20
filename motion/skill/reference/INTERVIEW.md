@@ -48,7 +48,7 @@ Ask together:
 3. **Voiceover:** none · VO-led · VO only on the CTA. If VO: the **persona** (age, role, attitude) and what it must
    NOT sound like. Then audition 3–4 voices on the real CTA line and send the takes.
 4. **Energy of the cut:** dynamic (pushes, zoom punches, kinetic type, colour wipes; the default for social) · editorial (slow, hard cuts, silence). Ask; a client found an unrequested editorial cut "boring".
-5. **Captions:** burned-in on 9:16 (recommended: feeds autoplay muted) · none. If burned in, recommend one of the two house defaults by reel type: `pill-sobrio` (premium / medical / B2B, also works in CapCut) or `karaoke-amarillo` (talking heads, education, VO-led social, MP4 only). Then offer the catalog (reference/CAPTIONS.md: pop, box, single word, underline, white card…) or a reference to learn from. Ask which words are keywords (accent colour, bigger) and whether emojis fit the brand. Word styles are MP4-only: in a CapCut hand-off they ship as a rendered caption clip (CAPCUT.md).
+5. **Captions:** burned-in on 9:16 (recommended: feeds autoplay muted) · none. If burned in, recommend one of the two house defaults by reel type: `pill-sobrio` (premium / medical / B2B, also works in CapCut) or `karaoke` (talking heads, education, VO-led social, MP4 only). Then offer the catalog (reference/CAPTIONS.md: pop, box, single word, underline, white card…) or a reference to learn from. Ask which words are keywords (accent colour, bigger) and whether emojis fit the brand. Word styles are MP4-only: in a CapCut hand-off they ship as a rendered caption clip (CAPCUT.md).
 
 ## Round 4 — Action and confirmation
 1. **CTA destination:** website · Instagram handle · WhatsApp · booking link · store — and the exact wording.
